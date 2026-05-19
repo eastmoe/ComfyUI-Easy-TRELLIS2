@@ -12,6 +12,8 @@
 # tqdm
 
 # comfy-3d-viewers>=0.2.44  # optional: only needed for external 3D preview nodes/workflows
+# plyfile      # optional mesh format support; install locally if your trimesh workflow needs it; not import directly
+# zstandard    # optional compressed-asset support; not import directly
 
 # Optional accelerated attention backends. TRELLIS2 now falls back to
 # ComfyUI attention / PyTorch SDPA when these are not installed.
@@ -38,8 +40,7 @@ o_voxel_vb_ap
 drtk
 trimesh
 timm
-plyfile      # optional mesh format support; install locally if your trimesh workflow needs it
-zstandard    # optional compressed-asset support; not used directly
+
 opencv-python-headless  # required by video export and PBR texture inpainting; opencv-python also works
 
 
