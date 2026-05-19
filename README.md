@@ -2,17 +2,16 @@
 
 ## Installation
 
-Three options, in order of speed -> reliability:
+Install the node like a regular ComfyUI custom node:
 
-1. **ComfyUI Manager (recommended)** — search for `TRELLIS2` in the Manager and click Install from the highest version displayed. If that doesn't work, try nightly.
-2. **Manager via Git URL** — in ComfyUI Manager: "Install via Git URL" with `https://github.com/PozzettiAndrea/ComfyUI-TRELLIS2.git`.
-3. **Manual (most reliable)**:
-   ```bash
-   cd ComfyUI/custom_nodes
-   git clone https://github.com/PozzettiAndrea/ComfyUI-TRELLIS2.git
-   cd ComfyUI-TRELLIS2
-   pip install -r requirements.txt --upgrade
-   ```
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/PozzettiAndrea/ComfyUI-TRELLIS2.git
+cd ComfyUI-TRELLIS2
+pip install -r requirements.txt --upgrade
+```
+
+Restart ComfyUI after installing the dependencies.
 
 Some example workflows use preview/save nodes from [ComfyUI-GeometryPack](https://github.com/PozzettiAndrea/ComfyUI-GeometryPack). Install it separately if those workflow nodes are missing.
 
