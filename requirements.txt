@@ -15,6 +15,9 @@
 # plyfile      # optional mesh format support; install locally if your trimesh workflow needs it; not import directly
 # zstandard    # optional compressed-asset support; not import directly
 
+# Vendored in ./comfy_sparse_attn to avoid PyPI install pressure.
+# comfy-sparse-attn==0.1.3
+
 # Optional accelerated attention backends. TRELLIS2 now falls back to
 # ComfyUI attention / PyTorch SDPA when these are not installed.
 # flash-attn
@@ -35,8 +38,6 @@
 # triton-windows>=3.5.0; platform_system == "Windows"
 
 
-# Vendored in ./comfy_sparse_attn to avoid PyPI install pressure.
-# comfy-sparse-attn==0.1.3
 flex_gemm_ap
 cumesh_vb
 o_voxel_vb_ap
