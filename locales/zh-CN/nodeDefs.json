@@ -1,0 +1,886 @@
+{
+  "LoadTrellis2Models": {
+    "display_name": "加载 TRELLIS.2 模型",
+    "description": "加载 TRELLIS.2 的模型配置，用于 image-to-3D 生成。\n\n该节点会创建一个轻量配置对象，推理节点会按需加载实际模型。\n\n分辨率模式：\n- 512：速度快，质量较低\n- 1024_cascade：最佳质量，使用 512->1024 级联\n- 1536_cascade：最高分辨率输出\n\nAttention backend：\n- auto：使用 ComfyUI attention 调度，并可回退到 PyTorch\n- comfy：使用 ComfyUI attention 调度\n- pytorch / sdpa：使用 PyTorch 原生 scaled_dot_product_attention\n- flash_attn：安装 FlashAttention 时使用，否则回退\n- xformers：启用 xFormers 时使用，否则回退\n- sageattn：安装 SageAttention 时使用，否则回退",
+    "inputs": {
+      "resolution": {
+        "name": "分辨率",
+        "tooltip": "TRELLIS.2 生成分辨率模式。1024_cascade 通常是质量和显存的平衡选择。",
+        "options": {
+          "512": "512",
+          "1024": "1024",
+          "1024_cascade": "1024 级联",
+          "1536_cascade": "1536 级联"
+        }
+      },
+      "precision": {
+        "name": "精度",
+        "tooltip": "模型精度。auto 会根据 GPU 自动选择：Ampere 及更新架构使用 bf16，Volta/Turing 使用 fp16，更老设备使用 fp32。",
+        "options": {
+          "auto": "自动",
+          "bf16": "bf16",
+          "fp16": "fp16",
+          "fp32": "fp32"
+        }
+      },
+      "attn_backend": {
+        "name": "Attention 后端",
+        "tooltip": "Attention backend。auto/comfy 不需要 flash-attn 或 sageattention；pytorch 使用原生 SDPA。",
+        "options": {
+          "auto": "自动",
+          "comfy": "ComfyUI",
+          "pytorch": "PyTorch",
+          "flash_attn": "FlashAttention",
+          "xformers": "xFormers",
+          "sdpa": "SDPA",
+          "sageattn": "SageAttention"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "模型配置",
+        "tooltip": "供 TRELLIS.2 推理节点使用的模型配置。"
+      }
+    }
+  },
+  "Trellis2GetConditioning": {
+    "display_name": "TRELLIS.2 获取条件",
+    "description": "预处理图像并使用 DINOv3 提取视觉特征。\n\n该节点会执行：\n1. 将 mask 应用为 alpha 通道\n2. 裁剪到物体包围盒\n3. 执行 alpha 预乘\n4. 提取 DINOv3 特征\n\n参数：\n- model_config：已加载的 TRELLIS.2 配置\n- image：输入图像（RGB）\n- mask：前景 mask（白色=物体，黑色=背景）\n可使用任意 ComfyUI mask 或分割节点生成 mask，例如 SAM。",
+    "inputs": {
+      "model_config": {
+        "name": "模型配置",
+        "tooltip": "来自“加载 TRELLIS.2 模型”节点的模型配置。"
+      },
+      "image": {
+        "name": "图像",
+        "tooltip": "输入图像。"
+      },
+      "mask": {
+        "name": "遮罩",
+        "tooltip": "前景 mask。白色区域为物体，黑色区域为背景。"
+      },
+      "background_color": {
+        "name": "背景颜色",
+        "tooltip": "被 mask 排除区域使用的背景颜色。",
+        "options": {
+          "black": "黑色",
+          "gray": "灰色",
+          "white": "白色"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "条件",
+        "tooltip": "DINOv3 图像条件，可传给 TRELLIS.2 形状、贴图或 Native sampling 节点。"
+      },
+      "1": {
+        "name": "预处理图像",
+        "tooltip": "裁剪、抠图并按背景颜色处理后的图像。"
+      }
+    }
+  },
+  "Trellis2ImageToShape": {
+    "display_name": "TRELLIS.2 图像生成形状",
+    "description": "从图像条件生成 3D 形状。\n\n输出 mesh、shape_slat（用于贴图生成）和 subs（细分引导）。",
+    "inputs": {
+      "model_config": {
+        "name": "模型配置",
+        "tooltip": "来自“加载 TRELLIS.2 模型”节点的模型配置。"
+      },
+      "conditioning": {
+        "name": "条件",
+        "tooltip": "来自“TRELLIS.2 获取条件”节点的图像条件。"
+      },
+      "seed": {
+        "name": "随机种子",
+        "tooltip": "用于可复现生成的随机种子。"
+      },
+      "ss_guidance_strength": {
+        "name": "SS CFG 强度",
+        "tooltip": "Sparse Structure 的 CFG scale。数值越高，越贴合输入图像。"
+      },
+      "ss_guidance_rescale": {
+        "name": "SS 引导重缩放",
+        "tooltip": "Sparse Structure 的 guidance rescale，可减少高 CFG 带来的伪影。"
+      },
+      "ss_sampling_steps": {
+        "name": "SS 采样步数",
+        "tooltip": "Sparse Structure 采样步数。步数越多质量可能越高，但速度更慢。"
+      },
+      "shape_guidance_strength": {
+        "name": "形状 CFG 强度",
+        "tooltip": "形状 SLat 的 CFG scale。数值越高，越贴合输入图像。"
+      },
+      "shape_guidance_rescale": {
+        "name": "形状引导重缩放",
+        "tooltip": "形状 SLat 的 guidance rescale，可减少高 CFG 带来的伪影。"
+      },
+      "shape_sampling_steps": {
+        "name": "形状采样步数",
+        "tooltip": "形状 SLat 采样步数。步数越多质量可能越高，但速度更慢。"
+      },
+      "max_tokens": {
+        "name": "最大 tokens",
+        "tooltip": "1024 级联的最大 token 数。降低可减少显存占用，但可能降低质量。默认 49152（约 9GB），低显存可尝试 32768（约 7GB）或 24576（约 6GB）。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "网格",
+        "tooltip": "生成的 TRIMESH 网格。"
+      },
+      "1": {
+        "name": "形状 SLat",
+        "tooltip": "形状 structured latent，可用于贴图生成。"
+      },
+      "2": {
+        "name": "细分引导",
+        "tooltip": "用于贴图/细分流程的 subdivision guides。"
+      }
+    }
+  },
+  "Trellis2MultiViewImageToShape": {
+    "display_name": "TRELLIS.2 多视图图像生成形状",
+    "description": "从多视图图像生成 3D 形状。\n\n每个采样步骤会对每个视图运行一次模型，并根据 voxel 面向的方向混合预测。最多支持 6 个视图。\n\nfront image + mask 为必填，其他视图可选；只有提供的视图会参与混合。",
+    "inputs": {
+      "model_config": {
+        "name": "模型配置",
+        "tooltip": "来自“加载 TRELLIS.2 模型”节点的模型配置。"
+      },
+      "front_image": {
+        "name": "正面图像",
+        "tooltip": "正面视图图像（必填）。"
+      },
+      "front_mask": {
+        "name": "正面遮罩",
+        "tooltip": "正面视图 mask（必填）。"
+      },
+      "back_image": {
+        "name": "背面图像",
+        "tooltip": "背面视图图像。"
+      },
+      "back_mask": {
+        "name": "背面遮罩",
+        "tooltip": "背面视图 mask。"
+      },
+      "left_image": {
+        "name": "左侧图像",
+        "tooltip": "左侧视图图像。"
+      },
+      "left_mask": {
+        "name": "左侧遮罩",
+        "tooltip": "左侧视图 mask。"
+      },
+      "right_image": {
+        "name": "右侧图像",
+        "tooltip": "右侧视图图像。"
+      },
+      "right_mask": {
+        "name": "右侧遮罩",
+        "tooltip": "右侧视图 mask。"
+      },
+      "top_image": {
+        "name": "顶部图像",
+        "tooltip": "顶部视图图像。"
+      },
+      "top_mask": {
+        "name": "顶部遮罩",
+        "tooltip": "顶部视图 mask。"
+      },
+      "bottom_image": {
+        "name": "底部图像",
+        "tooltip": "底部视图图像。"
+      },
+      "bottom_mask": {
+        "name": "底部遮罩",
+        "tooltip": "底部视图 mask。"
+      },
+      "seed": {
+        "name": "随机种子",
+        "tooltip": "用于可复现生成的随机种子。"
+      },
+      "ss_guidance_strength": {
+        "name": "SS CFG 强度",
+        "tooltip": "Sparse Structure 的 CFG scale。"
+      },
+      "ss_guidance_rescale": {
+        "name": "SS 引导重缩放",
+        "tooltip": "Sparse Structure guidance rescale。"
+      },
+      "ss_sampling_steps": {
+        "name": "SS 采样步数",
+        "tooltip": "Sparse Structure 采样步数。"
+      },
+      "shape_guidance_strength": {
+        "name": "形状 CFG 强度",
+        "tooltip": "形状 SLat 的 CFG scale。"
+      },
+      "shape_guidance_rescale": {
+        "name": "形状引导重缩放",
+        "tooltip": "形状 SLat guidance rescale。"
+      },
+      "shape_sampling_steps": {
+        "name": "形状采样步数",
+        "tooltip": "形状 SLat 采样步数。"
+      },
+      "max_tokens": {
+        "name": "最大 tokens",
+        "tooltip": "级联流程的最大 token 数。降低可减少显存占用。"
+      },
+      "front_axis": {
+        "name": "正面朝向轴",
+        "tooltip": "正面视图面向的 3D 轴。大多数模型使用 Z。",
+        "options": {
+          "z": "Z 轴",
+          "x": "X 轴"
+        }
+      },
+      "blend_temperature": {
+        "name": "混合温度",
+        "tooltip": "视图混合的 softmax temperature。数值越高，视图之间的过渡越锐利。"
+      },
+      "background_color": {
+        "name": "背景颜色",
+        "tooltip": "mask 区域之外使用的背景颜色。",
+        "options": {
+          "black": "黑色",
+          "gray": "灰色",
+          "white": "白色"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "网格",
+        "tooltip": "生成的 TRIMESH 网格。"
+      },
+      "1": {
+        "name": "形状 SLat",
+        "tooltip": "形状 structured latent，可用于贴图生成。"
+      },
+      "2": {
+        "name": "细分引导",
+        "tooltip": "用于贴图/细分流程的 subdivision guides。"
+      }
+    }
+  },
+  "Trellis2ShapeToTexturedMesh": {
+    "display_name": "TRELLIS.2 形状生成带纹理网格",
+    "description": "从形状 latent 生成 PBR voxel 纹理。\n\n接收“图像生成形状”的 shape_slat 和 subs，并生成 PBR 材质（base_color、metallic、roughness、alpha）的 voxel grid。",
+    "inputs": {
+      "model_config": {
+        "name": "模型配置",
+        "tooltip": "来自“加载 TRELLIS.2 模型”节点的模型配置。"
+      },
+      "conditioning": {
+        "name": "条件",
+        "tooltip": "来自“TRELLIS.2 获取条件”节点的图像条件，通常与形状生成使用同一条件。"
+      },
+      "shape_slat": {
+        "name": "形状 SLat",
+        "tooltip": "来自“TRELLIS.2 图像生成形状”节点的形状 structured latent。"
+      },
+      "subs": {
+        "name": "细分引导",
+        "tooltip": "来自“TRELLIS.2 图像生成形状”节点的 subdivision guides。"
+      },
+      "seed": {
+        "name": "随机种子",
+        "tooltip": "用于贴图变化的随机种子。"
+      },
+      "tex_guidance_strength": {
+        "name": "贴图 CFG 强度",
+        "tooltip": "Texture CFG scale。数值越高，越贴合输入图像。"
+      },
+      "tex_guidance_rescale": {
+        "name": "贴图引导重缩放",
+        "tooltip": "Texture guidance rescale，可减少高 CFG 带来的伪影。"
+      },
+      "tex_sampling_steps": {
+        "name": "贴图采样步数",
+        "tooltip": "Texture 采样步数。步数越多质量可能越高，但速度更慢。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "VoxelGrid",
+        "tooltip": "包含 PBR 属性的 TRELLIS.2 voxel grid。"
+      }
+    }
+  },
+  "Trellis2LoadMesh": {
+    "display_name": "TRELLIS.2 加载网格",
+    "description": "从文件加载 3D mesh。\n\n支持 GLB、GLTF、OBJ、PLY、STL、3MF、DAE、OFF 以及 trimesh 库支持的其他格式。\n\n参数：\n- mesh_path：mesh 文件的绝对路径",
+    "inputs": {
+      "mesh_path": {
+        "name": "网格路径",
+        "tooltip": "mesh 文件的绝对路径（GLB、OBJ、PLY、STL 等）。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "网格",
+        "tooltip": "加载后的 TRIMESH 网格。"
+      }
+    }
+  },
+  "Trellis2EncodeMesh": {
+    "display_name": "TRELLIS.2 编码网格",
+    "description": "将 mesh 编码为 TRELLIS.2 形状 structured latent。\n\n使用 FlexiDualGrid VAE Encoder 将 mesh 几何转换到 TRELLIS.2 latent space。该 latent 可用于：\n- 独立重新贴图（Texture Mesh 节点）\n- 几何细化（Refine Mesh 节点）\n\nmesh 会自动居中并缩放到 [-0.5, 0.5]^3。\nEncoder 权重必须已存在于 ComfyUI/models/trellis2。\n\n参数：\n- model_config：已加载的模型配置\n- mesh：输入 TRIMESH\n- resolution：voxelization 网格分辨率，默认 1024",
+    "inputs": {
+      "model_config": {
+        "name": "模型配置",
+        "tooltip": "来自“加载 TRELLIS.2 模型”节点的模型配置。"
+      },
+      "mesh": {
+        "name": "网格",
+        "tooltip": "需要编码的输入 mesh。"
+      },
+      "resolution": {
+        "name": "分辨率",
+        "tooltip": "编码网格分辨率。数值越高细节越多，但速度更慢。推荐 1024。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "形状 latent",
+        "tooltip": "编码后的 TRELLIS.2 形状 latent。"
+      }
+    }
+  },
+  "Trellis2TextureMesh": {
+    "display_name": "TRELLIS.2 网格贴图（独立）",
+    "description": "使用参考图像为已有 mesh 生成 PBR 纹理。\n\n这是“retexture”工作流：接收任意 mesh，使用 Encode Mesh 编码，然后在参考图像引导下生成新的 PBR 材质（base_color、metallic、roughness、alpha）。\n\n不同于标准贴图路径，该节点解码时不使用 subdivision guidance，因为 mesh 并非由 TRELLIS.2 的形状管线生成。\n\n输出是兼容 Export GLB、Simplify 等节点的 voxelgrid NPZ 数据。\n\n参数：\n- model_config：已加载的模型配置\n- conditioning：来自新参考图像的 DINOv3 conditioning\n- shape_latent：来自 Encode Mesh 的编码形状\n- seed：随机种子\n- tex_*：贴图采样参数",
+    "inputs": {
+      "model_config": {
+        "name": "模型配置",
+        "tooltip": "来自“加载 TRELLIS.2 模型”节点的模型配置。"
+      },
+      "conditioning": {
+        "name": "条件",
+        "tooltip": "来自“TRELLIS.2 获取条件”节点的图像条件，用作新的贴图参考。"
+      },
+      "shape_latent": {
+        "name": "形状 latent",
+        "tooltip": "来自“TRELLIS.2 编码网格”节点的编码形状 latent。"
+      },
+      "seed": {
+        "name": "随机种子",
+        "tooltip": "用于贴图变化的随机种子。"
+      },
+      "tex_guidance_strength": {
+        "name": "贴图 CFG 强度",
+        "tooltip": "Texture CFG scale。数值越高，越贴合输入图像。"
+      },
+      "tex_guidance_rescale": {
+        "name": "贴图引导重缩放",
+        "tooltip": "Texture guidance rescale，可减少高 CFG 带来的伪影。"
+      },
+      "tex_sampling_steps": {
+        "name": "贴图采样步数",
+        "tooltip": "Texture 采样步数。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "VoxelGrid",
+        "tooltip": "包含 PBR 属性的 TRELLIS.2 voxel grid。"
+      }
+    }
+  },
+  "Trellis2RefineMesh": {
+    "display_name": "TRELLIS.2 细化网格",
+    "description": "通过更高分辨率重新采样形状来细化 mesh 几何。\n\n接收编码后的 mesh shape latent，并执行：\n1. 通过 shape decoder 上采样得到高分辨率坐标\n2. 在这些坐标处重新采样新的 shape latent\n3. 解码为几何细节更好的 refined mesh\n\n输出 mesh、shape_slat 和 subs，可接入“形状生成带纹理网格”。\n\n参数：\n- model_config：已加载的模型配置\n- conditioning：DINOv3 conditioning，用于引导细化\n- shape_latent：来自 Encode Mesh 的编码形状\n- seed：随机种子\n- shape_*：形状采样参数\n- max_tokens：显存限制控制",
+    "inputs": {
+      "model_config": {
+        "name": "模型配置",
+        "tooltip": "来自“加载 TRELLIS.2 模型”节点的模型配置。"
+      },
+      "conditioning": {
+        "name": "条件",
+        "tooltip": "来自“TRELLIS.2 获取条件”节点的图像条件。"
+      },
+      "shape_latent": {
+        "name": "形状 latent",
+        "tooltip": "来自“TRELLIS.2 编码网格”节点的编码形状 latent。"
+      },
+      "seed": {
+        "name": "随机种子",
+        "tooltip": "用于细化的随机种子。"
+      },
+      "shape_guidance_strength": {
+        "name": "形状 CFG 强度",
+        "tooltip": "Shape CFG scale。"
+      },
+      "shape_guidance_rescale": {
+        "name": "形状引导重缩放",
+        "tooltip": "Shape guidance rescale，可减少高 CFG 带来的伪影。"
+      },
+      "shape_sampling_steps": {
+        "name": "形状采样步数",
+        "tooltip": "Shape 采样步数。"
+      },
+      "max_tokens": {
+        "name": "最大 tokens",
+        "tooltip": "HR 分辨率的最大 token 数。降低可减少显存占用。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "网格",
+        "tooltip": "细化后的 TRIMESH 网格。"
+      },
+      "1": {
+        "name": "形状 SLat",
+        "tooltip": "细化后的形状 structured latent。"
+      },
+      "2": {
+        "name": "细分引导",
+        "tooltip": "用于贴图/细分流程的 subdivision guides。"
+      }
+    }
+  },
+  "Trellis2ShapeToMesh": {
+    "display_name": "TRELLIS.2 简化网格",
+    "description": "简化 mesh 并可选择填洞。\n\n参数：\n- target_face_count：目标面数，0 表示不简化\n- fill_holes：简化前填充小洞\n- fill_holes_perimeter：要填充的最大洞周长",
+    "inputs": {
+      "trimesh": {
+        "name": "网格",
+        "tooltip": "来自“图像生成形状”或其他 mesh 来源的网格。"
+      },
+      "target_face_count": {
+        "name": "目标面数",
+        "tooltip": "目标面数。0 表示不简化。"
+      },
+      "fill_holes": {
+        "name": "填洞",
+        "tooltip": "简化前填充小洞。"
+      },
+      "fill_holes_perimeter": {
+        "name": "填洞最大周长",
+        "tooltip": "要填充的洞的最大周长。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "网格",
+        "tooltip": "处理后的 TRIMESH 网格。"
+      }
+    }
+  },
+  "Trellis2Simplify": {
+    "display_name": "TRELLIS.2 简化网格",
+    "description": "将 mesh 简化到目标面数。\n\n使用 CuMesh 进行 GPU 加速简化。\n\n参数：\n- target_face_count：目标面数\n- fill_holes：简化前填充小洞\n- fill_holes_perimeter：要填充的最大洞周长\n- remesh：应用 dual-contouring remesh 以获得更干净的拓扑\n- remesh_band：remesh band 宽度",
+    "inputs": {
+      "trimesh": {
+        "name": "网格",
+        "tooltip": "需要简化的 TRIMESH 网格。"
+      },
+      "target_face_count": {
+        "name": "目标面数",
+        "tooltip": "简化后的目标面数。"
+      },
+      "fill_holes": {
+        "name": "填洞",
+        "tooltip": "简化前填充小洞。"
+      },
+      "fill_holes_perimeter": {
+        "name": "填洞最大周长",
+        "tooltip": "要填充的洞的最大周长。"
+      },
+      "remesh": {
+        "name": "重拓扑",
+        "tooltip": "使用 dual-contouring remesh 获得更干净的拓扑。"
+      },
+      "remesh_band": {
+        "name": "重拓扑带宽",
+        "tooltip": "Remesh band 宽度。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "网格",
+        "tooltip": "简化后的 TRIMESH 网格。"
+      }
+    }
+  },
+  "Trellis2UVUnwrap": {
+    "display_name": "TRELLIS.2 UV 展开",
+    "description": "使用 xatlas 对 mesh 执行 UV unwrap。\n\n只创建 UV，不烘焙纹理。之后请使用 Rasterize PBR 节点。\n\n参数：\n- chart_cone_angle：UV chart 聚类阈值（度）\n- chart_refine_iterations：细化 UV charts\n- chart_global_iterations：全局 UV 优化轮数\n- chart_smooth_strength：UV 平滑强度\n\n提示：请先简化 mesh。对 1000 万面执行 UV unwrap 会非常慢。",
+    "inputs": {
+      "trimesh": {
+        "name": "网格",
+        "tooltip": "需要展开 UV 的 TRIMESH 网格。"
+      },
+      "chart_cone_angle": {
+        "name": "Chart 锥角",
+        "tooltip": "UV chart 聚类阈值，单位为度。"
+      },
+      "chart_refine_iterations": {
+        "name": "Chart 细化次数",
+        "tooltip": "UV chart refine iterations。"
+      },
+      "chart_global_iterations": {
+        "name": "Chart 全局优化次数",
+        "tooltip": "UV 全局优化轮数。"
+      },
+      "chart_smooth_strength": {
+        "name": "Chart 平滑强度",
+        "tooltip": "UV 平滑强度。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "网格",
+        "tooltip": "带 UV 的 TRIMESH 网格。"
+      }
+    }
+  },
+  "Trellis2ProcessMesh": {
+    "display_name": "TRELLIS.2 处理网格",
+    "description": "一体化 mesh 处理管线。\n\n在单个 CuMesh session 中组合 fill holes -> remesh -> simplify -> cleanup -> UV unwrap，以提升效率。\n\n输出 mesh 包含 UV 和 normals，可直接用于 Rasterize PBR。",
+    "inputs": {
+      "trimesh": {
+        "name": "网格",
+        "tooltip": "需要处理的 TRIMESH 网格。"
+      },
+      "remesh": {
+        "name": "重拓扑模式",
+        "tooltip": "选择是否执行 remesh。",
+        "options": {
+          "off": "关闭",
+          "on": "开启"
+        }
+      },
+      "fill_holes": {
+        "name": "填洞",
+        "tooltip": "简化前填充小洞。"
+      },
+      "fill_holes_perimeter": {
+        "name": "填洞最大周长",
+        "tooltip": "要填充的洞的最大周长。"
+      },
+      "remesh_band": {
+        "name": "重拓扑带宽",
+        "tooltip": "Remesh band 宽度。"
+      },
+      "remove_inner_faces": {
+        "name": "移除内部面",
+        "tooltip": "移除中心位于原始 mesh 内部的面，可减少内部几何伪影。"
+      },
+      "floater_threshold": {
+        "name": "悬浮碎片阈值",
+        "tooltip": "移除小型分离组件的面积阈值。0 表示禁用。"
+      },
+      "target_face_count": {
+        "name": "目标面数",
+        "tooltip": "处理后的目标面数。"
+      },
+      "weld_vertices": {
+        "name": "焊接顶点",
+        "tooltip": "UV unwrap 前合并重合顶点。"
+      },
+      "weld_digits": {
+        "name": "焊接精度位数",
+        "tooltip": "顶点坐标合并时使用的小数精度位数。"
+      },
+      "chart_cone_angle": {
+        "name": "Chart 锥角",
+        "tooltip": "UV chart 聚类阈值，单位为度。"
+      },
+      "chart_refine_iterations": {
+        "name": "Chart 细化次数",
+        "tooltip": "UV chart refine iterations。"
+      },
+      "chart_global_iterations": {
+        "name": "Chart 全局优化次数",
+        "tooltip": "UV 全局优化轮数。"
+      },
+      "chart_smooth_strength": {
+        "name": "Chart 平滑强度",
+        "tooltip": "UV 平滑强度。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "网格",
+        "tooltip": "带 UV 和 normals 的 TRIMESH 网格。"
+      }
+    }
+  },
+  "Trellis2RasterizePBR": {
+    "display_name": "TRELLIS.2 栅格化 PBR",
+    "description": "将 voxel 数据中的 PBR 纹理烘焙到已展开 UV 的 mesh 上。\n\n接收带 UV 的 mesh，并从 VOXELGRID 烘焙 color、metallic、roughness。\n\n输入 mesh 必须包含 UV，请先使用 UV Unwrap 节点。\n\n参数：\n- texture_size：烘焙纹理分辨率（512-16384px）",
+    "inputs": {
+      "trimesh": {
+        "name": "网格",
+        "tooltip": "已展开 UV 的 TRIMESH 网格。"
+      },
+      "voxelgrid": {
+        "name": "VoxelGrid",
+        "tooltip": "包含 PBR 属性的 TRELLIS.2 voxel grid。"
+      },
+      "texture_size": {
+        "name": "纹理尺寸",
+        "tooltip": "烘焙纹理分辨率，单位为像素。"
+      },
+      "original_mesh": {
+        "name": "原始网格",
+        "tooltip": "用于 BVH 投影的原始 mesh（简化前）。通过将 texel 位置投影回原始表面来提升纹理准确性。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "网格",
+        "tooltip": "带 PBR 材质纹理的 TRIMESH 网格。"
+      }
+    }
+  },
+  "Trellis2ExportGLB": {
+    "display_name": "TRELLIS.2 导出 GLB",
+    "description": "从 voxelgrid 数据一体化导出带纹理 GLB。\n\n接收“形状生成带纹理网格”的 voxelgrid_npz_path，并执行：\n1. 可选 remesh（Dual Contouring）\n2. 简化到 decimation_target 面数\n3. UV unwrap 并烘焙 PBR 纹理\n4. 导出带纹理 GLB",
+    "inputs": {
+      "voxelgrid_path": {
+        "name": "VoxelGrid 路径",
+        "tooltip": "voxelgrid NPZ 文件路径。"
+      },
+      "decimation_target": {
+        "name": "减面目标",
+        "tooltip": "导出前简化到的目标面数。"
+      },
+      "texture_size": {
+        "name": "纹理尺寸",
+        "tooltip": "导出 GLB 的纹理分辨率。"
+      },
+      "remesh": {
+        "name": "重拓扑",
+        "tooltip": "导出前执行 Dual Contouring remesh。"
+      },
+      "pre_simplify": {
+        "name": "预简化",
+        "tooltip": "remesh 前先简化 mesh，以大幅降低显存占用。可能损失非常细小的结构。"
+      },
+      "remove_inner_faces": {
+        "name": "移除内部面",
+        "tooltip": "移除中心位于原始 mesh 内部的面，可减少内部几何伪影。"
+      },
+      "double_sided": {
+        "name": "双面材质",
+        "tooltip": "在 GLB 中将材质标记为 double-sided，正反面都会渲染。"
+      },
+      "filename_prefix": {
+        "name": "文件名前缀",
+        "tooltip": "输出文件名前缀。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "GLB 路径",
+        "tooltip": "导出的 GLB 文件路径。"
+      }
+    }
+  },
+  "Trellis2ExportTrimesh": {
+    "display_name": "TRELLIS.2 导出 Trimesh",
+    "description": "将 trimesh 导出为多种 3D 文件格式。\n\n支持：GLB、OBJ、PLY、STL、3MF、DAE",
+    "inputs": {
+      "trimesh": {
+        "name": "网格",
+        "tooltip": "需要导出的 TRIMESH 网格。"
+      },
+      "filename_prefix": {
+        "name": "文件名前缀",
+        "tooltip": "输出文件名前缀。"
+      },
+      "file_format": {
+        "name": "文件格式",
+        "tooltip": "导出的 3D 文件格式。",
+        "options": {
+          "glb": "GLB",
+          "obj": "OBJ",
+          "ply": "PLY",
+          "stl": "STL",
+          "3mf": "3MF",
+          "dae": "DAE"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "文件路径",
+        "tooltip": "导出的文件路径。"
+      }
+    }
+  },
+  "Trellis2RenderPreview": {
+    "display_name": "TRELLIS.2 渲染预览",
+    "description": "渲染 3D mesh 的预览图像。\n\n参数：\n- trimesh：3D mesh 几何\n- num_views：要渲染的视图数量，围绕物体旋转\n- resolution：渲染分辨率\n- render_mode：渲染样式（normal、clay、base_color）",
+    "inputs": {
+      "trimesh": {
+        "name": "网格",
+        "tooltip": "需要渲染预览的 TRIMESH 网格。"
+      },
+      "num_views": {
+        "name": "视图数量",
+        "tooltip": "围绕物体渲染的视图数量。"
+      },
+      "resolution": {
+        "name": "分辨率",
+        "tooltip": "预览图像的渲染分辨率。"
+      },
+      "render_mode": {
+        "name": "渲染模式",
+        "tooltip": "预览渲染样式。",
+        "options": {
+          "normal": "法线",
+          "clay": "陶土",
+          "base_color": "基础色"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "预览图像",
+        "tooltip": "多视图预览图像批次。"
+      }
+    }
+  },
+  "Trellis2RenderVideo": {
+    "display_name": "TRELLIS.2 渲染视频",
+    "description": "渲染 mesh 旋转视频。\n\n参数：\n- trimesh：3D mesh 几何\n- num_frames：视频帧数\n- fps：每秒帧数\n- resolution：渲染分辨率\n- filename_prefix：输出文件名前缀",
+    "inputs": {
+      "trimesh": {
+        "name": "网格",
+        "tooltip": "需要渲染视频的 TRIMESH 网格。"
+      },
+      "num_frames": {
+        "name": "帧数",
+        "tooltip": "输出视频的总帧数。"
+      },
+      "fps": {
+        "name": "FPS",
+        "tooltip": "视频每秒帧数。"
+      },
+      "resolution": {
+        "name": "分辨率",
+        "tooltip": "视频帧的渲染分辨率。"
+      },
+      "filename_prefix": {
+        "name": "文件名前缀",
+        "tooltip": "输出视频文件名前缀。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "视频路径",
+        "tooltip": "渲染后的视频文件路径。"
+      }
+    }
+  },
+  "Trellis2LoadSSFlowModel": {
+    "display_name": "TRELLIS.2 加载 SS Flow 模型（Native）",
+    "description": "将 Sparse Structure Flow 模型加载为标准 ComfyUI MODEL。\n\n该节点会把 flow model 包装进 ComfyUI 的 BaseModel/ModelPatcher 系统，使其可由 KSampler 以及任意 sampler/scheduler 驱动。\n\n将输出 MODEL 连接到 KSampler 的 model 输入。\n使用 Trellis2SSConditioning 生成 positive/negative conditioning。\n使用 Trellis2Empty3DLatent 生成初始 latent。",
+    "inputs": {
+      "model_config": {
+        "name": "模型配置",
+        "tooltip": "来自“加载 TRELLIS.2 模型”节点的模型配置。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "模型",
+        "tooltip": "可连接到 KSampler 的 ComfyUI MODEL。"
+      }
+    }
+  },
+  "Trellis2SSConditioning": {
+    "display_name": "TRELLIS.2 SS 条件（Native）",
+    "description": "将 TRELLIS.2 DINOv3 conditioning 转换为标准 ComfyUI CONDITIONING。\n\n接收“TRELLIS.2 获取条件”的输出，并生成兼容 KSampler 的 positive/negative conditioning。\n\n将 positive 连接到 KSampler 的 positive 输入。\n将 negative 连接到 KSampler 的 negative 输入。",
+    "inputs": {
+      "conditioning": {
+        "name": "条件",
+        "tooltip": "来自“TRELLIS.2 获取条件”节点的 DINOv3 conditioning。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "正向条件",
+        "tooltip": "连接到 KSampler positive 输入的 conditioning。"
+      },
+      "1": {
+        "name": "负向条件",
+        "tooltip": "连接到 KSampler negative 输入的 conditioning。"
+      }
+    }
+  },
+  "Trellis2Empty3DLatent": {
+    "display_name": "TRELLIS.2 空 3D Latent",
+    "description": "为 sparse structure sampling 创建空 3D latent tensor。\n\n读取模型的 resolution 和 channel count 以创建正确形状：[batch, channels, res, res, res]。\n\n默认 TRELLIS2 模型为：[1, 8, 16, 16, 16]。",
+    "inputs": {
+      "model": {
+        "name": "模型",
+        "tooltip": "TRELLIS.2 SS Flow MODEL。"
+      },
+      "batch_size": {
+        "name": "批次大小",
+        "tooltip": "要创建的 3D latent 批次数。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Latent",
+        "tooltip": "用于 KSampler 的空 3D latent。"
+      }
+    }
+  },
+  "Trellis2ApplyGuidanceInterval": {
+    "display_name": "TRELLIS.2 应用引导区间",
+    "description": "应用 guidance interval，控制采样过程中 CFG 生效的时间范围。\n\n对 TRELLIS2 flow matching，sigma 从 1.0（纯噪声）到 0.0（干净结果）。\n- (0.0, 1.0) = 始终应用 CFG（默认，与标准 KSampler 相同）\n- (0.2, 0.8) = 仅当 sigma 位于 0.2 到 0.8 之间时应用 CFG\n\n区间之外只使用 conditional prediction（无 CFG）。",
+    "inputs": {
+      "model": {
+        "name": "模型",
+        "tooltip": "需要添加 guidance interval 的 ComfyUI MODEL。"
+      },
+      "guidance_interval_start": {
+        "name": "引导区间起点",
+        "tooltip": "Guidance interval 起点（sigma 值）。0.0 表示从干净端开始应用。"
+      },
+      "guidance_interval_end": {
+        "name": "引导区间终点",
+        "tooltip": "Guidance interval 终点（sigma 值）。1.0 表示应用到噪声端。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "模型",
+        "tooltip": "已应用 guidance interval 的 MODEL。"
+      }
+    }
+  },
+  "Trellis2DecodeSSLatent": {
+    "display_name": "TRELLIS.2 解码 SS Latent",
+    "description": "将 sparse structure latent 解码为 voxel coordinates。\n\n接收 KSampler 采样得到的 latent，并执行：\n1. 运行 SparseStructureDecoder（logits -> binary occupancy）\n2. 可选通过 max pooling 下采样到目标分辨率\n3. 提取激活 voxel coordinates\n\n输出 coords 可传递给下游形状生成节点。",
+    "inputs": {
+      "model_config": {
+        "name": "模型配置",
+        "tooltip": "来自“加载 TRELLIS.2 模型”节点的模型配置。"
+      },
+      "samples": {
+        "name": "采样结果",
+        "tooltip": "KSampler 输出的 sparse structure latent。"
+      },
+      "ss_resolution": {
+        "name": "SS 分辨率",
+        "tooltip": "目标 sparse structure 分辨率。如果 decoder 输出更高分辨率，会通过 maxpool 下采样。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "坐标",
+        "tooltip": "激活 voxel 的 sparse structure 坐标。"
+      }
+    }
+  }
+}

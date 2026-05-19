@@ -110,6 +110,19 @@ opencv-python-headless
 
 TRELLIS.2 conditioning 需要前景 mask。本分支已移除内置 RMBG，请使用 ComfyUI 原生 SAM、Impact Pack、Inspire Pack 或其他你习惯的分割/遮罩节点。
 
+## 简体中文界面
+
+本仓库内置 ComfyUI 节点定义翻译：
+
+```text
+locales/zh-CN/nodeDefs.json
+locales/zh/nodeDefs.json
+```
+
+当 ComfyUI 前端语言设置为简体中文时，节点名称、节点说明、输入/输出接口名、tooltip 和常见选项会显示为中文。`TRELLIS.2`、`DINOv3`、`SLat`、`VoxelGrid`、`PBR`、`CFG`、`SDPA`、`FlashAttention`、`xFormers`、`SageAttention` 等专有名词会保留原文或采用中英混排，以避免和论文、模型文件及工作流里的术语脱节。
+
+节点内部参数 key 仍保持英文，例如 `model_config`、`shape_slat`、`max_tokens`、`attn_backend`。这是为了兼容已有 ComfyUI 工作流 JSON，不影响连线、保存或复用旧工作流。
+
 可用工作流示例位于：
 
 ```text
