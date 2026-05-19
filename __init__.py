@@ -1,11 +1,16 @@
 import logging
 import pathlib
+import sys
 
 log = logging.getLogger("trellis2")
 log.info("loading...")
 
 
 def _stage_sparse_attention_modules():
+    package_root = pathlib.Path(__file__).parent
+    if str(package_root) not in sys.path:
+        sys.path.insert(0, str(package_root))
+
     import comfy_sparse_attn
     from comfy_sparse_attn import setup_link
 

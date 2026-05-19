@@ -35,7 +35,8 @@
 # triton-windows>=3.5.0; platform_system == "Windows"
 
 
-comfy-sparse-attn==0.1.3
+# Vendored in ./comfy_sparse_attn to avoid PyPI install pressure.
+# comfy-sparse-attn==0.1.3
 flex_gemm_ap
 cumesh_vb
 o_voxel_vb_ap
