@@ -31,5 +31,7 @@ zstandard    # optional compressed-asset support; not used directly
 opencv-python-headless  # required by video export and PBR texture inpainting; opencv-python also works
 # imageio>=2.0.0  # replaced by OpenCV video writer
 # easydict         # replaced by local sampler helper
-triton>=3.0.0; platform_system == "Linux"
-triton-windows>=3.5.0; platform_system == "Windows"
+# Optional Triton acceleration. TRELLIS2 uses native PyTorch fallbacks when
+# Triton is not installed in the current environment.
+# triton>=3.0.0; platform_system == "Linux"
+# triton-windows>=3.5.0; platform_system == "Windows"

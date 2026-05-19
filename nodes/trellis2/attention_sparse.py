@@ -9,6 +9,7 @@ are not required to run the nodes.
 from __future__ import annotations
 
 import logging
+from importlib.util import find_spec
 from typing import Callable
 
 import torch
@@ -19,6 +20,8 @@ log = logging.getLogger("trellis2")
 _ATTN_BACKEND = "auto"
 _dense_printed = False
 _varlen_printed = False
+_triton_checked = False
+_triton_available = False
 
 _BACKEND_ALIASES = {
     "auto": "auto",
@@ -57,6 +60,14 @@ def set_attn_backend(backend: str) -> None:
 
 def get_attn_backend() -> str:
     return _ATTN_BACKEND
+
+
+def _has_triton() -> bool:
+    global _triton_checked, _triton_available
+    if not _triton_checked:
+        _triton_available = find_spec("triton") is not None
+        _triton_checked = True
+    return _triton_available
 
 
 def _parse_dense_args(*args, **kwargs):
@@ -271,6 +282,9 @@ def _accelerated_varlen(
     max_seqlen_q: int,
     max_seqlen_kv: int,
 ) -> torch.Tensor:
+    if not _has_triton():
+        raise RuntimeError("Triton is not installed")
+
     from comfy_sparse_attn import dispatch_varlen_attention as package_dispatch
 
     return package_dispatch(
@@ -299,6 +313,18 @@ def dispatch_varlen_attention(
         return _sdpa_varlen(q, k, v, cu_seqlens_q, cu_seqlens_kv, max_seqlen_q, max_seqlen_kv)
     if backend == "comfy":
         return _comfy_varlen(q, k, v, cu_seqlens_q, cu_seqlens_kv, max_seqlen_q, max_seqlen_kv)
+    if not _has_triton():
+        if backend not in ("auto",):
+            log.warning("%s varlen attention requested but Triton is unavailable; using fallback", backend)
+        try:
+            return _comfy_varlen(
+                q, k, v, cu_seqlens_q, cu_seqlens_kv, max_seqlen_q, max_seqlen_kv
+            )
+        except Exception as comfy_exc:
+            log.warning("ComfyUI varlen fallback failed (%s); using PyTorch SDPA", comfy_exc)
+            return _sdpa_varlen(
+                q, k, v, cu_seqlens_q, cu_seqlens_kv, max_seqlen_q, max_seqlen_kv
+            )
 
     try:
         return _accelerated_varlen(
