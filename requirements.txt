@@ -5,7 +5,7 @@
 # safetensors
 # psutil
 # einops
-# transformers
+# transformers  # ComfyUI-provided; TRELLIS2 no longer uses it directly after removing rmbg/BiRefNet
 # kornia
 # pillow>=9.0.0
 # numpy>=1.21.0
@@ -20,9 +20,11 @@
 # flash-attn
 # sageattention
 
-# huggingface_hub  # provided by transformers/ComfyUI; only used for local cache probing
+# huggingface_hub  # no longer used directly after removing rmbg/BiRefNet
 # hf_transfer  # local-only model loading; HF downloads are disabled
 # hf_xet       # local-only model loading; HF downloads are disabled
+# timm  # removed rmbg/BiRefNet background-removal node; use external SAM/mask nodes for segmentation
+
 
 # imageio>=2.0.0  # replaced by OpenCV video writer
 # easydict         # replaced by local sampler helper
@@ -39,8 +41,4 @@ cumesh_vb
 o_voxel_vb_ap
 drtk
 trimesh
-timm
-
 opencv-python-headless  # required by video export and PBR texture inpainting; opencv-python also works
-
-

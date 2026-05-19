@@ -27,7 +27,7 @@ Parameters:
 - model_config: The loaded TRELLIS.2 config
 - image: Input image (RGB)
 - mask: Foreground mask (white=object, black=background)
-Use any background removal node (BiRefNet, rembg, etc.) to generate the mask.""",
+Use any ComfyUI mask or segmentation node, such as SAM, to generate the mask.""",
             inputs=[
                 io.Custom("TRELLIS2_MODEL_CONFIG").Input("model_config"),
                 io.Image.Input("image"),
@@ -216,101 +216,6 @@ Takes shape_slat and subs from "Image to Shape" and generates PBR materials
             )
 
         return io.NodeOutput(voxelgrid)
-
-
-class Trellis2RemoveBackground(io.ComfyNode):
-    """Remove background from image using BiRefNet (TRELLIS rembg).
-
-    Note: This is NOT isolated because BiRefNet runs fine in main process
-    and doesn't conflict with other packages.
-    """
-
-    _model = None  # Class-level cache
-
-    @classmethod
-    def define_schema(cls):
-        return io.Schema(
-            node_id="Trellis2RemoveBackground",
-            display_name="TRELLIS.2 Remove Background",
-            category="TRELLIS2",
-            description="""Remove background from image using BiRefNet (same as TRELLIS rembg).
-
-This node extracts a foreground mask using the BiRefNet segmentation model.
-The mask can be used with the "Get Conditioning" node.
-
-Parameters:
-- image: Input RGB image
-- low_vram: Move model to CPU when not in use (slower but saves VRAM)
-
-Returns:
-- image: Original image (unchanged)
-- mask: Foreground mask (white=object, black=background)""",
-            inputs=[
-                io.Image.Input("image"),
-                io.Boolean.Input("low_vram", default=True, optional=True),
-            ],
-            outputs=[
-                io.Image.Output(display_name="image"),
-                io.Mask.Output(display_name="mask"),
-            ],
-        )
-
-    @classmethod
-    def execute(cls, image, low_vram=True):
-        import gc
-        import torch
-        import numpy as np
-        from PIL import Image
-
-        import comfy.model_management as mm
-
-        # Lazy import rembg from trellis2
-        from . import rembg
-
-        device = mm.get_torch_device()
-
-        # Load or reuse cached model
-        if Trellis2RemoveBackground._model is None:
-            log.info("Loading BiRefNet model for background removal...")
-            Trellis2RemoveBackground._model = rembg.BiRefNet(model_name="briaai/RMBG-2.0")
-            if not low_vram:
-                Trellis2RemoveBackground._model.to(device)
-
-        model = Trellis2RemoveBackground._model
-
-        # Convert ComfyUI tensor to PIL
-        if image.dim() == 4:
-            img_np = (image[0].cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
-        else:
-            img_np = (image.cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
-        pil_image = Image.fromarray(img_np)
-
-        log.info("Removing background...")
-
-        comfy.model_management.throw_exception_if_processing_interrupted()
-
-        if low_vram:
-            model.to(device)
-
-        # Run BiRefNet - returns RGBA image
-        output = model(pil_image)
-
-        if low_vram:
-            model.cpu()
-            gc.collect()
-            mm.soft_empty_cache()
-
-        # Extract mask from alpha channel
-        output_np = np.array(output)
-        mask_np = output_np[:, :, 3].astype(np.float32) / 255.0
-
-        # Convert mask to ComfyUI format (B, H, W)
-        mask_tensor = torch.tensor(mask_np).unsqueeze(0)
-
-        log.info("Background removed successfully")
-
-        # Return original image + mask
-        return io.NodeOutput(image, mask_tensor)
 
 
 class Trellis2LoadMesh(io.ComfyNode):
@@ -813,7 +718,6 @@ views participate in blending.""",
 
 
 NODE_CLASS_MAPPINGS = {
-    "Trellis2RemoveBackground": Trellis2RemoveBackground,
     "Trellis2GetConditioning": Trellis2GetConditioning,
     "Trellis2ImageToShape": Trellis2ImageToShape,
     "Trellis2MultiViewImageToShape": Trellis2MultiViewImageToShape,
@@ -826,7 +730,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "Trellis2RemoveBackground": "TRELLIS.2 Remove Background",
     "Trellis2GetConditioning": "TRELLIS.2 Get Conditioning",
     "Trellis2ImageToShape": "TRELLIS.2 Image to Shape",
     "Trellis2MultiViewImageToShape": "TRELLIS.2 Multi-View Image to Shape",

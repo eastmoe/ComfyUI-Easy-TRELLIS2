@@ -15,6 +15,8 @@ Restart ComfyUI after installing the dependencies.
 
 Some example workflows use preview/save nodes from [ComfyUI-GeometryPack](https://github.com/PozzettiAndrea/ComfyUI-GeometryPack). Install it separately if those workflow nodes are missing.
 
+TRELLIS.2 conditioning expects a foreground mask. Use ComfyUI's native SAM support or any other mask/segmentation node before `TRELLIS.2 Get Conditioning`.
+
 > **Please report any problems** you hit during installation or use of my nodes — open a [Discussion](https://github.com/PozzettiAndrea/ComfyUI-TRELLIS2/discussions) or [Issue](https://github.com/PozzettiAndrea/ComfyUI-TRELLIS2/issues). Very grateful for your help! 🙏
 
 ---
@@ -34,11 +36,9 @@ Generate high-quality 3D meshes with PBR (Physically Based Rendering) materials 
 
 
 
-## Example Workfloww
+## Example Workflow
 
 ![tpose](docs/tpose.png)
-
-![rmbg](docs/rmbg.png)
 
 
 https://github.com/user-attachments/assets/e28e4a74-b119-4303-8e30-63361f26aa88
