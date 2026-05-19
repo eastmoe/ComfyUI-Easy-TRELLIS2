@@ -1,11 +1,8 @@
-> [!WARNING]
-> Warning, uses experimental package `comfy-env` to attempt a one click isolated install. Will download and use pixi package manager.
-
 # ComfyUI-TRELLIS2
 
 ## Installation
 
-Three options, in order of speed → reliability:
+Three options, in order of speed -> reliability:
 
 1. **ComfyUI Manager (recommended)** — search for `TRELLIS2` in the Manager and click Install from the highest version displayed. If that doesn't work, try nightly.
 2. **Manager via Git URL** — in ComfyUI Manager: "Install via Git URL" with `https://github.com/PozzettiAndrea/ComfyUI-TRELLIS2.git`.
@@ -15,8 +12,9 @@ Three options, in order of speed → reliability:
    git clone https://github.com/PozzettiAndrea/ComfyUI-TRELLIS2.git
    cd ComfyUI-TRELLIS2
    pip install -r requirements.txt --upgrade
-   python install.py
    ```
+
+Some example workflows use preview/save nodes from [ComfyUI-GeometryPack](https://github.com/PozzettiAndrea/ComfyUI-GeometryPack). Install it separately if those workflow nodes are missing.
 
 > **Please report any problems** you hit during installation or use of my nodes — open a [Discussion](https://github.com/PozzettiAndrea/ComfyUI-TRELLIS2/discussions) or [Issue](https://github.com/PozzettiAndrea/ComfyUI-TRELLIS2/issues). Very grateful for your help! 🙏
 

@@ -2,6 +2,7 @@ import logging
 import pathlib
 import comfy_sparse_attn
 from comfy_sparse_attn import setup_link
+
 _PKG = pathlib.Path(comfy_sparse_attn.__file__).parent
 setup_link(_PKG / "sparse.py",           "sparse.py")
 setup_link(_PKG / "ops_sparse.py",       "ops_sparse.py")
@@ -10,8 +11,6 @@ del pathlib, comfy_sparse_attn, setup_link, _PKG
 
 log = logging.getLogger("trellis2")
 log.info("loading...")
-from comfy_env import register_nodes
-log.info("calling register_nodes")
 
 # Register TRELLIS2 model configs with ComfyUI's detection system
 # so checkpoints can be auto-detected from state dict keys.
@@ -24,7 +23,8 @@ try:
 except Exception as e:
     log.warning(f"failed to register TRELLIS2 model configs: {e}")
 
-NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS = register_nodes()
+from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS  # noqa: E402
+log.info("registered nodes")
 
 
 WEB_DIRECTORY = "./web"
