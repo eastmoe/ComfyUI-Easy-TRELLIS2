@@ -15,11 +15,6 @@ RMBG_MODEL_REMAP = {
 }
 
 
-def _is_offline_mode() -> bool:
-    """Check if offline mode is enabled via HF_HUB_OFFLINE environment variable."""
-    return os.environ.get("HF_HUB_OFFLINE", "0") == "1"
-
-
 def _is_model_cached(model_name: str, cache_dir: str) -> bool:
     """Check if a HuggingFace model is already cached locally."""
     try:
@@ -43,12 +38,16 @@ class BiRefNet:
         cache_dir = os.path.join(folder_paths.models_dir, "birefnet")
         os.makedirs(cache_dir, exist_ok=True)
 
-        # Use local_files_only if model is cached or offline mode is enabled
-        local_files_only = _is_offline_mode() or _is_model_cached(actual_model_name, cache_dir)
-        if local_files_only:
+        # Model downloads are intentionally disabled; only local cache is used.
+        local_files_only = True
+        if _is_model_cached(actual_model_name, cache_dir):
             log.info(f"Loading BiRefNet model from cache: {actual_model_name}...")
         else:
-            log.info(f"Downloading BiRefNet model: {actual_model_name}...")
+            raise FileNotFoundError(
+                "[TRELLIS2] BiRefNet auto-download is disabled. "
+                f"Please cache or place the model locally under {cache_dir}. "
+                f"Source repository: {actual_model_name}."
+            )
 
         self.model = AutoModelForImageSegmentation.from_pretrained(
             actual_model_name, trust_remote_code=True, cache_dir=cache_dir,

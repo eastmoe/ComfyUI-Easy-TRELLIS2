@@ -156,7 +156,7 @@ Parameters:
     def execute(cls, trimesh, num_frames=60, fps=15, resolution=512, filename_prefix="trellis2_video"):
         import torch
         import pyrender
-        import imageio
+        import cv2
         import math
 
         logger.info(f"Rendering video ({num_frames} frames at {fps}fps)...")
@@ -224,7 +224,19 @@ Parameters:
         output_dir = folder_paths.get_output_directory()
         output_path = os.path.join(output_dir, filename)
 
-        imageio.mimsave(output_path, frames, fps=fps)
+        writer = cv2.VideoWriter(
+            output_path,
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            float(fps),
+            (resolution, resolution),
+        )
+        if not writer.isOpened():
+            raise RuntimeError("Failed to open OpenCV VideoWriter for MP4 export")
+        try:
+            for frame in frames:
+                writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+        finally:
+            writer.release()
 
         logger.info(f"Video saved to: {output_path}")
 

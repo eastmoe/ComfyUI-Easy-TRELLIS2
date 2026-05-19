@@ -32,7 +32,7 @@ class LoadTrellis2Models(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="LoadTrellis2Models",
-            display_name="(Down)Load TRELLIS.2 Models",
+            display_name="Load TRELLIS.2 Models",
             category="TRELLIS2",
             description="""Load TRELLIS.2 model configuration for image-to-3D generation.
 
@@ -66,7 +66,7 @@ Attention backend:
 
     @classmethod
     def execute(cls, resolution='1024_cascade', precision="auto", attn_backend="auto", **kwargs):
-        # Ensure all models are downloaded before inference nodes run
+        # Ensure all required model files are present before inference nodes run
         from .stages import _init_config
         _init_config()
 
@@ -110,5 +110,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "LoadTrellis2Models": "(Down)Load TRELLIS.2 Models",
+    "LoadTrellis2Models": "Load TRELLIS.2 Models",
 }

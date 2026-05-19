@@ -21,13 +21,13 @@ sageattention
 drtk
 trimesh[easy]
 huggingface_hub
-hf_transfer
-hf_xet
+# hf_transfer  # local-only model loading; HF downloads are disabled
+# hf_xet       # local-only model loading; HF downloads are disabled
 timm
-plyfile
-zstandard
+# plyfile      # provided by trimesh[easy]/local mesh handling when available
+# zstandard    # optional compressed-asset support; not used directly
 opencv-python-headless
-imageio>=2.0.0
-easydict
+# imageio>=2.0.0  # replaced by OpenCV video writer
+# easydict         # replaced by local sampler helper
 triton>=3.0.0; platform_system == "Linux"
 triton-windows>=3.5.0; platform_system == "Windows"

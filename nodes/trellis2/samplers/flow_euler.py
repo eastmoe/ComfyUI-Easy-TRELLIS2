@@ -2,7 +2,7 @@ from typing import *
 import logging
 import torch
 import numpy as np
-from easydict import EasyDict as edict
+from ._easydict import EasyDict as edict
 from .base import Sampler
 from .classifier_free_guidance_mixin import ClassifierFreeGuidanceSamplerMixin
 from .guidance_interval_mixin import GuidanceIntervalSamplerMixin

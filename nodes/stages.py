@@ -21,30 +21,6 @@ from PIL import Image
 log = logging.getLogger("trellis2")
 
 
-def _comfy_tqdm():
-    """tqdm that shows download progress in ComfyUI's UI."""
-    try:
-        import comfy.utils
-        import tqdm as _tqdm_mod
-    except ImportError:
-        return None
-    holder = {"pbar": None, "total": 0, "done": 0}
-    class _T(_tqdm_mod.tqdm):
-        def __init__(self, *a, **kw):
-            super().__init__(*a, **kw)
-            if self.total and self.total > 0 and holder["pbar"] is None:
-                holder["total"] = self.total
-                holder["done"] = 0
-                holder["pbar"] = comfy.utils.ProgressBar(self.total)
-        def update(self, n=1):
-            ret = super().update(n)
-            if n and holder["pbar"] and holder["total"] > 0:
-                holder["done"] = min(holder["done"] + n, holder["total"])
-                holder["pbar"].update_absolute(holder["done"], holder["total"])
-            return ret
-    return _T
-
-
 from .helpers import smart_crop_square
 
 
@@ -173,6 +149,16 @@ def _get_trellis2_models_dir():
     return models_dir
 
 
+def _raise_missing_model_files(missing_files: List[str], models_dir: str, repo_id: str = "microsoft/TRELLIS.2-4B"):
+    rel_files = [os.path.relpath(path, models_dir).replace("\\", "/") for path in missing_files]
+    raise FileNotFoundError(
+        "[TRELLIS2] Model auto-download is disabled. "
+        f"Please place the required file(s) under {models_dir}: "
+        + ", ".join(rel_files)
+        + f". Source repository: {repo_id}."
+    )
+
+
 def _init_config():
     """Parse pipeline.json once and resolve all model paths to local files."""
     global _pipeline_config, _model_paths
@@ -185,15 +171,12 @@ def _init_config():
     config_file = os.path.join(models_dir, "pipeline.json")
 
     if not os.path.exists(config_file):
-        from huggingface_hub import hf_hub_download
-        print("[TRELLIS2] Downloading pipeline config from HuggingFace...", flush=True)
-        hf_hub_download("microsoft/TRELLIS.2-4B", "pipeline.json", local_dir=models_dir, tqdm_class=_comfy_tqdm())
-        print("[TRELLIS2] Pipeline config downloaded", flush=True)
+        _raise_missing_model_files([config_file], models_dir)
 
     with open(config_file, 'r') as f:
         _pipeline_config = json.load(f)['args']
 
-    # Count total models to download for progress bar (+1 for shape_slat_encoder)
+    # Count total models to validate for progress bar (+1 for shape_slat_encoder)
     total_models = len(_pipeline_config['models']) + 1
     pbar = comfy.utils.ProgressBar(total_models)
 
@@ -216,14 +199,8 @@ def _init_config():
         if os.path.exists(local_config) and os.path.exists(local_weights):
             _model_paths[key] = local_weights
         else:
-            # Download if not cached
-            from huggingface_hub import hf_hub_download
-            os.makedirs(os.path.dirname(local_config), exist_ok=True)
-            print(f"[TRELLIS2] Downloading {model_name} from {repo_id}...", flush=True)
-            hf_hub_download(repo_id, f"{model_name}.json", local_dir=models_dir, tqdm_class=_comfy_tqdm())
-            hf_hub_download(repo_id, f"{model_name}.safetensors", local_dir=models_dir, tqdm_class=_comfy_tqdm())
-            print(f"[TRELLIS2] Downloaded {model_name}", flush=True)
-            _model_paths[key] = local_weights
+            missing = [path for path in (local_config, local_weights) if not os.path.exists(path)]
+            _raise_missing_model_files(missing, models_dir, repo_id)
         pbar.update(1)
 
     # Register shape_slat_encoder (not in pipeline.json but needed for mesh encoding)
@@ -232,12 +209,8 @@ def _init_config():
         local_config = os.path.join(models_dir, f"{encoder_model_name}.json")
         local_weights = os.path.join(models_dir, f"{encoder_model_name}.safetensors")
         if not (os.path.exists(local_config) and os.path.exists(local_weights)):
-            from huggingface_hub import hf_hub_download
-            os.makedirs(os.path.dirname(local_config), exist_ok=True)
-            print(f"[TRELLIS2] Downloading {encoder_model_name}...", flush=True)
-            hf_hub_download("microsoft/TRELLIS.2-4B", f"{encoder_model_name}.json", local_dir=models_dir, tqdm_class=_comfy_tqdm())
-            hf_hub_download("microsoft/TRELLIS.2-4B", f"{encoder_model_name}.safetensors", local_dir=models_dir, tqdm_class=_comfy_tqdm())
-            print(f"[TRELLIS2] Downloaded {encoder_model_name}", flush=True)
+            missing = [path for path in (local_config, local_weights) if not os.path.exists(path)]
+            _raise_missing_model_files(missing, models_dir)
         _model_paths['shape_slat_encoder'] = local_weights
     pbar.update(1)
 
@@ -1464,7 +1437,7 @@ def run_encode_mesh(
     Encode a mesh into a shape structured latent (TRELLIS2_SHAPE_LATENT).
 
     This is the prerequisite for standalone texturing and mesh refinement.
-    First run will download the shape encoder weights (~950MB).
+    The shape encoder weights must already exist in ComfyUI/models/trellis2.
 
     Args:
         model_config: Trellis2ModelConfig

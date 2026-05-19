@@ -380,7 +380,7 @@ latent space. The latent can then be used for:
 - Geometry refinement (Refine Mesh node)
 
 The mesh is automatically centered and scaled to [-0.5, 0.5]^3.
-First run will download the encoder weights (~950MB) from HuggingFace.
+The encoder weights must already exist in ComfyUI/models/trellis2.
 
 Parameters:
 - model_config: The loaded model config
