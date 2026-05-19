@@ -16,8 +16,10 @@ comfy-sparse-attn==0.1.3
 flex_gemm_ap
 cumesh_vb
 o_voxel_vb_ap
-flash-attn
-sageattention
+# Optional accelerated attention backends. TRELLIS2 now falls back to
+# ComfyUI attention / PyTorch SDPA when these are not installed.
+# flash-attn
+# sageattention
 drtk
 trimesh
 # huggingface_hub  # provided by transformers/ComfyUI; only used for local cache probing

@@ -21,8 +21,8 @@ log = logging.getLogger("trellis2")
 # Resolution modes (matching original TRELLIS.2)
 RESOLUTION_MODES = ['512', '1024', '1024_cascade', '1536_cascade']
 
-# Attention backend options (auto detects best available)
-ATTN_BACKENDS = ['auto', 'flash_attn', 'xformers', 'sdpa', 'sageattn']
+# Attention backend options (auto uses ComfyUI with PyTorch fallback)
+ATTN_BACKENDS = ['auto', 'comfy', 'pytorch', 'flash_attn', 'xformers', 'sdpa', 'sageattn']
 
 
 class LoadTrellis2Models(io.ComfyNode):
@@ -45,11 +45,12 @@ Resolution modes:
 - 1536_cascade: Highest resolution output
 
 Attention backend:
-- auto: Best available (sageattn > flash_attn > xformers > sdpa)
-- flash_attn: FlashAttention (requires flash_attn package)
-- xformers: Memory-efficient attention (requires xformers package)
-- sdpa: PyTorch native scaled_dot_product_attention (PyTorch >= 2.0)
-- sageattn: SageAttention (fastest, requires sageattention package)""",
+- auto: ComfyUI attention dispatch with PyTorch fallback
+- comfy: ComfyUI attention dispatch
+- pytorch / sdpa: PyTorch native scaled_dot_product_attention
+- flash_attn: FlashAttention if installed, otherwise fallback
+- xformers: xFormers if enabled, otherwise fallback
+- sageattn: SageAttention if installed, otherwise fallback""",
             inputs=[
                 io.Combo.Input("resolution", options=RESOLUTION_MODES, default='1024_cascade'),
                 io.Combo.Input("precision", options=["auto", "bf16", "fp16", "fp32"],
@@ -57,7 +58,7 @@ Attention backend:
                                tooltip="Model precision. auto: best for your GPU (bf16 on Ampere+, fp16 on Volta/Turing, fp32 on older)."),
                 io.Combo.Input("attn_backend", options=ATTN_BACKENDS,
                                default="auto", optional=True,
-                               tooltip="Attention backend. auto: best available (sageattn > flash_attn > xformers > sdpa)."),
+                               tooltip="Attention backend. auto/comfy do not require flash-attn or sageattention; pytorch uses native SDPA."),
             ],
             outputs=[
                 io.Custom("TRELLIS2_MODEL_CONFIG").Output(display_name="model_config"),

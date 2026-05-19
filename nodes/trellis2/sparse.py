@@ -7,7 +7,8 @@ import torch
 import torch.nn as nn
 
 def set_attn_backend(backend: str) -> None:
-    pass  # auto-detected on first use via comfy_sparse_attn
+    from .attention_sparse import set_attn_backend as _set_attn_backend
+    _set_attn_backend(backend)
 
 from comfy.sparse import (
     VarLenTensor,

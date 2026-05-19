@@ -89,6 +89,8 @@ _BACKEND_MAP = {
     'sageattn': 'sage',
     'flash_attn': 'flash_attn',
     'xformers': 'sdpa',
+    'comfy': 'comfy',
+    'pytorch': 'pytorch',
     'sdpa': 'sdpa',
     'naive': 'sdpa',
     'auto': 'auto',
@@ -97,8 +99,7 @@ _BACKEND_MAP = {
 
 def get_backend() -> str:
     """Get current backend name."""
-    # Dense attention uses ComfyUI's optimized_attention_for_device,
-    # which auto-selects the best backend.
+    # Dense attention is dispatched by nodes.trellis2.attention_sparse.
     return 'auto'
 
 
@@ -107,10 +108,12 @@ def set_backend(backend: str) -> None:
     Set backend explicitly.
 
     Args:
-        backend: One of 'sageattn', 'flash_attn', 'xformers', 'sdpa', 'naive', 'auto'
+        backend: One of 'auto', 'comfy', 'pytorch', 'sageattn', 'flash_attn', 'xformers', 'sdpa', 'naive'
     """
     comfy_name = _BACKEND_MAP.get(backend, 'auto')
-    log.info(f"Dense attention backend request: {comfy_name} (ComfyUI auto-selects on device)")
+    from .attention_sparse import set_attn_backend
+    set_attn_backend(backend)
+    log.info(f"Dense attention backend request: {comfy_name}")
 
 
 def set_debug(debug: bool) -> None:
