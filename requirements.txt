@@ -1,6 +1,18 @@
+# Dependencies already provided by ComfyUI requirements.txt.
+# Reuse ComfyUI's pinned/base versions; keep these commented to avoid duplicate installs.
+# comfy-aimdo
+# av
+# safetensors
+# psutil
+# einops
+# transformers
+# kornia
+# pillow>=9.0.0
+# numpy>=1.21.0
+# tqdm
+
 comfy-3d-viewers==0.2.44
 comfy-sparse-attn==0.1.3
-comfy-aimdo
 flex_gemm_ap
 cumesh_vb
 o_voxel_vb_ap
@@ -8,23 +20,14 @@ flash-attn
 sageattention
 drtk
 trimesh[easy]
-av
 huggingface_hub
 hf_transfer
 hf_xet
-safetensors
 timm
 plyfile
 zstandard
-psutil
-einops
-transformers
-kornia
-pillow>=9.0.0
 opencv-python-headless
 imageio>=2.0.0
-numpy>=1.21.0
 easydict
-tqdm
 triton>=3.0.0; platform_system == "Linux"
 triton-windows>=3.5.0; platform_system == "Windows"
