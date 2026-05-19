@@ -11,7 +11,7 @@
 # numpy>=1.21.0
 # tqdm
 
-comfy-3d-viewers==0.2.44
+# comfy-3d-viewers>=0.2.44  # optional: only needed for external 3D preview nodes/workflows
 comfy-sparse-attn==0.1.3
 flex_gemm_ap
 cumesh_vb
@@ -19,14 +19,14 @@ o_voxel_vb_ap
 flash-attn
 sageattention
 drtk
-trimesh[easy]
-huggingface_hub
+trimesh
+# huggingface_hub  # provided by transformers/ComfyUI; only used for local cache probing
 # hf_transfer  # local-only model loading; HF downloads are disabled
 # hf_xet       # local-only model loading; HF downloads are disabled
 timm
-# plyfile      # provided by trimesh[easy]/local mesh handling when available
-# zstandard    # optional compressed-asset support; not used directly
-opencv-python-headless
+plyfile      # optional mesh format support; install locally if your trimesh workflow needs it
+zstandard    # optional compressed-asset support; not used directly
+opencv-python-headless  # required by video export and PBR texture inpainting; opencv-python also works
 # imageio>=2.0.0  # replaced by OpenCV video writer
 # easydict         # replaced by local sampler helper
 triton>=3.0.0; platform_system == "Linux"
