@@ -4,7 +4,7 @@ comfy/ops_sparse.py — sparse layer operations for ComfyUI.
 Mirrors comfy/ops.py: provides `disable_weight_init` and `manual_cast` tiers
 for sparse layers operating on VarLenTensor / SparseTensor.
 
-Conv backend dispatch (spconv, torchsparse, flex_gemm) is also here.
+Conv backend dispatch (spconv first, torchsparse fallback) is also here.
 Backend detection lives in .detect; conv config globals are re-exported for
 convenience.
 
@@ -17,7 +17,6 @@ Usage:
 """
 
 import logging
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -27,7 +26,7 @@ import comfy.model_management
 from comfy.ops import cast_bias_weight, uncast_bias_weight, CastWeightBiasOp, run_every_op
 from comfy_sparse_attn.detect import (
     get_conv_backend, set_conv_backend,
-    SPCONV_ALGO, FLEX_GEMM_ALGO, FLEX_GEMM_HASHMAP_RATIO,
+    SPCONV_ALGO,
 )
 
 log = logging.getLogger("comfy_sparse_attn")
@@ -162,129 +161,6 @@ def _torchsparse_inverse_conv3d_forward(self, x):
     return out
 
 
-# --- flex_gemm ---
-
-_flex_gemm_mod = None
-_flex_gemm_spconv_ops = None
-
-def _load_flex_gemm():
-    global _flex_gemm_mod, _flex_gemm_spconv_ops
-    if _flex_gemm_mod is None:
-        import flex_gemm_ap as _fg
-        from flex_gemm_ap.ops.spconv import sparse_submanifold_conv3d as _ssc
-        _flex_gemm_mod = _fg
-        _flex_gemm_spconv_ops = _ssc
-    return _flex_gemm_mod, _flex_gemm_spconv_ops
-
-
-def _flex_gemm_conv3d_init(self, in_channels, out_channels, kernel_size, stride=1, dilation=1, padding=None, bias=True, indice_key=None):
-    assert stride == 1 and (padding is None), 'Currently flex_gemm implementation only support submanifold sparse convolution (stride=1, padding=None)'
-
-    self.in_channels = in_channels
-    self.out_channels = out_channels
-    self.kernel_size = tuple(kernel_size) if isinstance(kernel_size, (list, tuple)) else (kernel_size, ) * 3
-    self.stride = tuple(stride) if isinstance(stride, (list, tuple)) else (stride, ) * 3
-    self.dilation = tuple(dilation) if isinstance(dilation, (list, tuple)) else (dilation, ) * 3
-
-    self.weight = nn.Parameter(torch.empty((out_channels, in_channels, *self.kernel_size)))
-    if bias:
-        self.bias = nn.Parameter(torch.empty(out_channels))
-    else:
-        self.register_parameter("bias", None)
-
-    torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-    if self.bias is not None:
-        fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
-        if fan_in != 0:
-            bound = 1 / math.sqrt(fan_in)
-            torch.nn.init.uniform_(self.bias, -bound, bound)
-
-    # Permute weight (Co, Ci, Kd, Kh, Kw) -> (Co, Kd, Kh, Kw, Ci)
-    self.weight = nn.Parameter(self.weight.permute(0, 2, 3, 4, 1).contiguous())
-
-
-def _flex_gemm_conv3d_forward(self, x):
-    flex_gemm_mod, _ = _load_flex_gemm()
-    flex_gemm_mod.ops.spconv.set_algorithm(FLEX_GEMM_ALGO)
-    flex_gemm_mod.ops.spconv.set_hashmap_ratio(FLEX_GEMM_HASHMAP_RATIO)
-
-    Co, Kd, Kh, Kw, Ci = self.weight.shape
-    neighbor_cache_key = f'SubMConv3d_neighbor_cache_{Kw}x{Kh}x{Kd}_dilation{self.dilation}'
-    neighbor_cache = x.get_spatial_cache(neighbor_cache_key)
-
-    feats = x.feats
-    if feats.dtype != self.weight.dtype:
-        feats = feats.to(self.weight.dtype)
-
-    # --- TILED PATH ---
-    max_tile = getattr(self, 'max_voxels_per_tile', 0)
-    N = feats.shape[0]
-    if max_tile > 0 and N > max_tile:
-        from flex_gemm_ap.ops.spconv.submanifold_conv3d import SubMConv3dFunction
-        _ma = torch.cuda.memory_allocated
-        feats_mb = feats.nelement() * feats.element_size() // 1048576
-        print(f"[sparse-conv] TILED: N={N:,} max_tile={max_tile:,} feats={feats_mb}MB alloc={_ma()//1048576}MB", flush=True)
-        # Offload feats to CPU HERE so caller refs don't pin GPU memory
-        coords = x.coords
-        shape = torch.Size([*x.shape, *x.spatial_shape])
-        feats_cpu = feats.cpu()
-        del feats
-        x.data['feats'] = feats_cpu  # replace GPU feats with CPU copy (frees GPU)
-        torch.cuda.empty_cache()
-        print(f"[sparse-conv] TILED feats offloaded to CPU, alloc={_ma()//1048576}MB", flush=True)
-        out_feats = SubMConv3dFunction.tiled_forward(
-            feats_cpu, coords, shape,
-            self.weight, self.bias,
-            (Kw, Kh, Kd), self.dilation,
-            max_voxels_per_tile=max_tile,
-        )
-        del feats_cpu
-        print(f"[sparse-conv] TILED done: out={out_feats.nelement()*out_feats.element_size()//1048576}MB "
-              f"alloc={_ma()//1048576}MB", flush=True)
-        return x.replace(out_feats)
-
-    # --- NORMAL PATH ---
-    # Bypass autograd Function.apply() — direct static method calls avoid
-    # save_for_backward() pinning input tensors during inference.
-    from flex_gemm_ap.ops.spconv.submanifold_conv3d import SubMConv3dFunction
-    _cache_hit = neighbor_cache is not None
-    if neighbor_cache is None:
-        neighbor_cache_ = SubMConv3dFunction._compute_neighbor_cache(
-            x.coords,
-            torch.Size([*x.shape, *x.spatial_shape]),
-            (Kw, Kh, Kd),
-            self.dilation
-        )
-    else:
-        neighbor_cache_ = neighbor_cache
-
-    _cache_mb = sum(v.nelement() * v.element_size() for v in vars(neighbor_cache_).values() if isinstance(v, torch.Tensor)) // 1048576
-    print(f"[sparse-conv] N={feats.shape[0]:,} Ci={Ci} Co={Co} "
-          f"feats={feats.nelement()*feats.element_size()//1048576}MB "
-          f"cache={_cache_mb}MB ({'hit' if _cache_hit else 'miss'}) "
-          f"w_dev={self.weight.device} alloc={torch.cuda.memory_allocated()//1048576}MB", flush=True)
-
-    out = SubMConv3dFunction._sparse_submanifold_conv_forward(
-        feats, neighbor_cache_, self.weight, self.bias
-    )
-
-    print(f"[sparse-conv] out={out.nelement()*out.element_size()//1048576}MB alloc={torch.cuda.memory_allocated()//1048576}MB", flush=True)
-
-    if neighbor_cache is None:
-        x.register_spatial_cache(neighbor_cache_key, neighbor_cache_)
-
-    out = x.replace(out)
-    return out
-
-
-def _flex_gemm_inverse_conv3d_init(self, *args, **kwargs):
-    raise NotImplementedError('SparseInverseConv3d with flex_gemm is not implemented yet')
-
-
-def _flex_gemm_inverse_conv3d_forward(self, x):
-    raise NotImplementedError('SparseInverseConv3d with flex_gemm is not implemented yet')
-
-
 # --- Dispatch table ---
 
 _conv_backend_dispatch = {
@@ -300,17 +176,16 @@ _conv_backend_dispatch = {
         'inverse_conv3d_init': _torchsparse_inverse_conv3d_init,
         'inverse_conv3d_forward': _torchsparse_inverse_conv3d_forward,
     },
-    'flex_gemm': {
-        'conv3d_init': _flex_gemm_conv3d_init,
-        'conv3d_forward': _flex_gemm_conv3d_forward,
-        'inverse_conv3d_init': _flex_gemm_inverse_conv3d_init,
-        'inverse_conv3d_forward': _flex_gemm_inverse_conv3d_forward,
-    },
 }
 
 
 def _get_conv_backend():
     backend = get_conv_backend()
+    if backend not in _conv_backend_dispatch:
+        raise RuntimeError(
+            "SparseConv3d requires a sparse convolution backend. "
+            "Install spconv-cu126 or the spconv-cuXXX wheel matching your CUDA/PyTorch stack."
+        )
     return backend, _conv_backend_dispatch[backend]
 
 
@@ -513,9 +388,8 @@ class disable_weight_init:
         """
         Sparse 3D convolution with backend dispatch and ComfyUI auto-casting.
 
-        Weight/bias live wherever the backend places them (self.conv.weight for
-        spconv/torchsparse, self.weight for flex_gemm). Forward temporarily injects
-        cast weights into the backend before running.
+        Weight/bias live wherever the backend places them. Forward temporarily
+        injects cast weights into the backend before running.
         """
         comfy_cast_weights = False
         weight_function = []

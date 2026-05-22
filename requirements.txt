@@ -38,9 +38,11 @@
 # triton-windows>=3.5.0; platform_system == "Windows"
 
 
-flex_gemm_ap
-cumesh_vb
-o_voxel_vb_ap
+# Sparse convolution backend. If your ComfyUI/PyTorch stack uses a different
+# CUDA wheel, replace this with the matching spconv-cuXXX package.
+spconv-cu126>=2.3.8
+cumesh @ git+https://github.com/JeffreyXiang/CuMesh.git
+o_voxel @ git+https://github.com/microsoft/TRELLIS.2.git#subdirectory=o-voxel
 drtk
 trimesh
 opencv-python-headless  # required by video export and PBR texture inpainting; opencv-python also works

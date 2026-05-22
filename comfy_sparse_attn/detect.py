@@ -49,8 +49,6 @@ def _can_import(module_name: str) -> bool:
 # ---------------------------------------------------------------------------
 
 SPCONV_ALGO = 'auto'
-FLEX_GEMM_ALGO = 'masked_implicit_gemm_splitk'
-FLEX_GEMM_HASHMAP_RATIO = 2.0
 
 _CONV = None  # Lazy — detected on first use
 
@@ -59,21 +57,17 @@ def _detect_available_conv_backend() -> str:
     """Try to import conv backends in priority order, return first available."""
     env_backend = os.environ.get('SPARSE_CONV_BACKEND')
     if env_backend:
-        valid_backends = ['none', 'spconv', 'torchsparse', 'flex_gemm']
+        valid_backends = ['none', 'spconv', 'torchsparse']
         if env_backend in valid_backends:
             log.info(f"Using conv backend from SPARSE_CONV_BACKEND env var: {env_backend}")
             return env_backend
         else:
             log.warning(f"Invalid SPARSE_CONV_BACKEND '{env_backend}', must be one of {valid_backends}")
 
-    backends = ['flex_gemm', 'spconv', 'torchsparse']
+    backends = ['spconv', 'torchsparse']
     for backend in backends:
         try:
-            if backend == 'flex_gemm':
-                import flex_gemm_ap  # noqa: F401
-                log.info("Auto-detected conv backend: flex_gemm")
-                return backend
-            elif backend == 'spconv':
+            if backend == 'spconv':
                 import spconv  # noqa: F401
                 log.info("Auto-detected conv backend: spconv")
                 return backend
@@ -102,7 +96,7 @@ def get_conv_backend() -> str:
 def set_conv_backend(backend: str) -> None:
     """Set conv backend explicitly."""
     global _CONV
-    valid_backends = ['none', 'spconv', 'torchsparse', 'flex_gemm']
+    valid_backends = ['none', 'spconv', 'torchsparse']
     if backend not in valid_backends:
         raise ValueError(f"Invalid conv backend '{backend}', must be one of {valid_backends}")
     if _CONV is not None and _CONV != backend:

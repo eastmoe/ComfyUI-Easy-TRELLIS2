@@ -566,10 +566,6 @@
         "name": "重拓扑带宽",
         "tooltip": "Remesh band 宽度。"
       },
-      "remove_inner_faces": {
-        "name": "移除内部面",
-        "tooltip": "移除中心位于原始 mesh 内部的面，可减少内部几何伪影。"
-      },
       "floater_threshold": {
         "name": "悬浮碎片阈值",
         "tooltip": "移除小型分离组件的面积阈值。0 表示禁用。"
@@ -661,10 +657,6 @@
       "pre_simplify": {
         "name": "预简化",
         "tooltip": "remesh 前先简化 mesh，以大幅降低显存占用。可能损失非常细小的结构。"
-      },
-      "remove_inner_faces": {
-        "name": "移除内部面",
-        "tooltip": "移除中心位于原始 mesh 内部的面，可减少内部几何伪影。"
       },
       "double_sided": {
         "name": "双面材质",

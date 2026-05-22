@@ -78,9 +78,9 @@ def _encode_mesh_to_shape_slat(vertices, faces, resolution, device):
         shape_slat SparseTensor
     """
     from .trellis2.sparse import SparseTensor
-    import o_voxel_vb_ap
+    import o_voxel
 
-    voxel_indices, dual_vertices, intersected = o_voxel_vb_ap.convert.mesh_to_flexible_dual_grid(
+    voxel_indices, dual_vertices, intersected = o_voxel.convert.mesh_to_flexible_dual_grid(
         vertices.cpu(),
         faces.cpu(),
         grid_size=resolution,
@@ -867,7 +867,7 @@ def run_shape_generation(
         Tuple of (mesh_vertices, mesh_faces, shape_slat_data, subs_data)
     """
     import comfy.utils
-    import cumesh_vb as CuMesh
+    import cumesh as CuMesh
 
     _init_config()
 
@@ -1189,7 +1189,7 @@ def run_multiview_shape_generation(
         Tuple of (mesh_vertices, mesh_faces, shape_slat_data, subs_data)
     """
     import comfy.utils
-    import cumesh_vb as CuMesh
+    import cumesh as CuMesh
 
     _init_config()
 
@@ -1622,7 +1622,7 @@ def run_refine_mesh(
         Tuple of (mesh_vertices, mesh_faces, shape_slat_data, subs_data)
     """
     import comfy.utils
-    import cumesh_vb as CuMesh
+    import cumesh as CuMesh
     from .trellis2.sparse import SparseTensor
     from .trellis2.samplers import FlowEulerGuidanceIntervalSampler
 

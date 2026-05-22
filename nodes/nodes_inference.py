@@ -535,7 +535,7 @@ Parameters:
 
         if simplify or fill_holes:
             import torch
-            import cumesh_vb as CuMesh
+            import cumesh as CuMesh
 
             device = comfy.model_management.get_torch_device()
 

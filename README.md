@@ -84,13 +84,15 @@ model.safetensors
 `requirements.txt` 只保留本节点直接需要、且通常不是 ComfyUI 默认提供的依赖：
 
 ```text
-flex_gemm_ap
-cumesh_vb
-o_voxel_vb_ap
+spconv-cu126>=2.3.8
+cumesh @ git+https://github.com/JeffreyXiang/CuMesh.git
+o_voxel @ git+https://github.com/microsoft/TRELLIS.2.git#subdirectory=o-voxel
 drtk
 trimesh
 opencv-python-headless
 ```
+
+其中 `spconv` 作为稀疏卷积 backend 替代 `flex_gemm`；纹理采样中的 `grid_sample_3d` 由仓库内的稀疏查表 helper 提供，不再依赖 `flex_gemm.ops.grid_sample`。如果你的 ComfyUI / PyTorch 环境不是 CUDA 12.6，可将 `spconv-cu126` 换成匹配的 `spconv-cuXXX` 包。本分支也不再依赖 `flex_gemm_ap`、`cumesh_vb`、`o_voxel_vb_ap` 这些自定义包。
 
 以下依赖被刻意改为可选或移除：
 

@@ -69,7 +69,7 @@ Parameters:
         remesh_band=1.0,
     ):
         import torch
-        import cumesh_vb as CuMesh
+        import cumesh as CuMesh
         import trimesh as Trimesh
 
         logger.info(f"Simplify: {len(trimesh.vertices)} vertices, {len(trimesh.faces)} faces -> {target_face_count} target")
@@ -205,7 +205,7 @@ TIP: Simplify mesh first! UV unwrapping 10M faces takes forever.""",
         chart_smooth_strength=1,
     ):
         import torch
-        import cumesh_vb as CuMesh
+        import cumesh as CuMesh
         import trimesh as Trimesh
 
         logger.info(f"UV Unwrap: {len(trimesh.vertices)} vertices, {len(trimesh.faces)} faces")
@@ -290,7 +290,6 @@ Output mesh has UVs and normals ready for Rasterize PBR.""",
                     ]),
                     io.DynamicCombo.Option("on", [
                         io.Float.Input("remesh_band", default=1.0, min=0.1, max=5.0, step=0.1),
-                        io.Boolean.Input("remove_inner_faces", default=False),
                     ]),
                 ]),
                 # 3. Floater removal
@@ -327,7 +326,7 @@ Output mesh has UVs and normals ready for Rasterize PBR.""",
         chart_smooth_strength=1,
     ):
         import torch
-        import cumesh_vb as CuMesh
+        import cumesh as CuMesh
         import trimesh as Trimesh
 
         # Extract remesh toggle parameters
@@ -335,7 +334,6 @@ Output mesh has UVs and normals ready for Rasterize PBR.""",
             remesh = {"remesh": "off"}
         do_remesh = remesh.get("remesh", "off") == "on"
         remesh_band = remesh.get("remesh_band", 1.0)
-        remove_inner_faces = remesh.get("remove_inner_faces", False)
         fill_holes = remesh.get("fill_holes", True)
         fill_holes_perimeter = remesh.get("fill_holes_perimeter", 0.03)
 
@@ -374,8 +372,8 @@ Output mesh has UVs and normals ready for Rasterize PBR.""",
             scale = (aabb[1] - aabb[0]).max().item()
             resolution = 512
 
-            _print(f"Remeshing (quad DC, resolution={resolution}, band={remesh_band}, remove_inner_faces={remove_inner_faces})...")
-            cumesh.init(*CuMesh.remeshing.remesh_narrow_band_dc_quad(
+            _print(f"Remeshing (DC, resolution={resolution}, band={remesh_band})...")
+            cumesh.init(*CuMesh.remeshing.remesh_narrow_band_dc(
                 curr_verts, curr_faces,
                 center=center,
                 scale=scale * 1.1,
@@ -383,7 +381,6 @@ Output mesh has UVs and normals ready for Rasterize PBR.""",
                 band=remesh_band,
                 project_back=0.0,
                 verbose=True,
-                remove_inner_faces=remove_inner_faces,
             ))
             _print(f"After remesh: {cumesh.num_vertices} verts, {cumesh.num_faces} faces")
             del curr_verts, curr_faces
@@ -537,8 +534,8 @@ Parameters:
     ):
         import torch
         import cv2
-        import cumesh_vb as CuMesh
-        from flex_gemm_ap.ops.grid_sample import grid_sample_3d
+        import cumesh as CuMesh
+        from .trellis2.grid_sample import grid_sample_3d
         import trimesh as Trimesh
 
         # Check for UVs
@@ -590,7 +587,7 @@ Parameters:
 
         # BVH projection: snap texel positions back to original mesh surface
         if original_mesh is not None:
-            import cumesh_vb as CuMesh
+            import cumesh as CuMesh
             orig_verts = torch.tensor(original_mesh.vertices, dtype=torch.float32).to(device)
             orig_faces = torch.tensor(original_mesh.faces, dtype=torch.int32).to(device)
             bvh = CuMesh.cuBVH(orig_verts, orig_faces)
@@ -609,7 +606,7 @@ Parameters:
             shape=torch.Size([1, attr_volume.shape[1], *grid_size.tolist()]),
             grid=((valid_pos - aabb[0]) / voxel_size).reshape(1, -1, 3),
             mode='trilinear',
-        )
+        )[0]
 
         # Sample PBR attributes at vertex positions (already in internal Z-up)
         logger.info("Sampling vertex PBR attributes...")
@@ -718,290 +715,6 @@ Parameters:
         return io.NodeOutput(result)
 
 
-def remesh_narrow_band_dc_lowmem(
-    vertices, faces, center, scale, resolution,
-    band=1, project_back=0, verbose=False, bvh=None,
-    topo_chunk=500_000, tri_chunk=500_000,
-    remove_inner_faces=False,
-):
-    """Low-memory version of cumesh_vb.remeshing.remesh_narrow_band_dc.
-
-    Same algorithm but chunks the topology generation and triangle splitting
-    steps to avoid materializing huge intermediate tensors.
-    """
-    import torch
-    from cumesh_vb import _C
-    from cumesh_vb.bvh import cuBVH
-    from cumesh_vb.remeshing import _init_hashmap
-    from tqdm import tqdm
-
-    device = vertices.device
-
-    # --- Constants ---
-    edge_neighbor_voxel_offset = torch.tensor([
-        [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]],
-        [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],
-        [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]],
-    ], dtype=torch.int32, device=device).unsqueeze(0)  # (1, 3, 4, 3)
-
-    quad_split_1_n = torch.tensor([0, 1, 2, 0, 2, 3], dtype=torch.long, device=device)
-    quad_split_1_p = torch.tensor([0, 2, 1, 0, 3, 2], dtype=torch.long, device=device)
-    quad_split_2_n = torch.tensor([0, 1, 3, 3, 1, 2], dtype=torch.long, device=device)
-    quad_split_2_p = torch.tensor([0, 3, 1, 3, 2, 1], dtype=torch.long, device=device)
-
-    OFFSETS = torch.tensor([
-        [0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0],
-        [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1],
-    ], dtype=torch.int32, device=device)
-
-    # --- 1. Build BVH ---
-    if bvh is None:
-        if verbose:
-            print("Building BVH...")
-        bvh = cuBVH(vertices, faces)
-
-    eps = band * scale / resolution
-
-    # --- 2. Sparse Grid Construction ---
-    base_resolution = resolution
-    while base_resolution > 32:
-        assert base_resolution % 2 == 0
-        base_resolution //= 2
-
-    coords = torch.stack(torch.meshgrid(
-        torch.arange(base_resolution, device=device),
-        torch.arange(base_resolution, device=device),
-        torch.arange(base_resolution, device=device),
-        indexing='ij',
-    ), dim=-1).int().reshape(-1, 3)
-
-    pbar = tqdm(
-        total=int(torch.log2(torch.tensor(resolution // base_resolution)).item()) + 1,
-        desc="Building Sparse Grid", disable=not verbose,
-    )
-
-    while True:
-        cell_size = scale / base_resolution
-        pts = ((coords.float() + 0.5) / base_resolution - 0.5) * scale + center
-        distances = bvh.unsigned_distance(pts)[0]
-        distances -= eps
-        distances = torch.abs(distances)
-        subdiv_mask = distances < 0.87 * cell_size
-        coords = coords[subdiv_mask]
-        if base_resolution >= resolution:
-            break
-        base_resolution *= 2
-        coords *= 2
-        coords = (coords.unsqueeze(1) + OFFSETS.unsqueeze(0)).reshape(-1, 3)
-        pbar.update(1)
-
-    Nvox = coords.shape[0]
-    if verbose:
-        print(f"Sparse grid: {Nvox:,} voxels")
-
-    # --- 3. Hashmaps + DC vertices ---
-    hashmap_vox = _init_hashmap(resolution, 2 * Nvox, device)
-    _C.hashmap_insert_3d_idx_as_val_cuda(
-        *hashmap_vox,
-        torch.cat([torch.zeros_like(coords[:, :1]), coords], dim=1),
-        resolution, resolution, resolution,
-    )
-
-    coords = coords.contiguous()
-    grid_verts = _C.get_sparse_voxel_grid_active_vertices(
-        *hashmap_vox, coords, resolution, resolution, resolution,
-    )
-    Nvert = grid_verts.shape[0]
-
-    pts_vert = (grid_verts.float() / resolution - 0.5) * scale + center
-    distances_vert = bvh.unsigned_distance(pts_vert)[0]
-    distances_vert -= eps
-
-    pbar.update(1)
-    pbar.close()
-
-    if verbose:
-        print("Running Dual Contouring...")
-
-    hashmap_vert = _init_hashmap(resolution + 1, 2 * Nvert, device)
-    _C.hashmap_insert_3d_idx_as_val_cuda(
-        *hashmap_vert,
-        torch.cat([torch.zeros_like(grid_verts[:, :1]), grid_verts], dim=1),
-        resolution + 1, resolution + 1, resolution + 1,
-    )
-
-    dual_verts, intersected = _C.simple_dual_contour(
-        *hashmap_vert, coords, distances_vert,
-        resolution + 1, resolution + 1, resolution + 1,
-    )
-
-    # Free hashmap_vert — no longer needed
-    del hashmap_vert, grid_verts, distances_vert, pts_vert
-    torch.cuda.empty_cache()
-
-    # --- 4. Chunked Topology Generation ---
-    if verbose:
-        print(f"Topology generation (chunked, {topo_chunk:,} voxels/chunk)...")
-
-    R = resolution
-    all_quad_indices = []
-    all_intersected_dirs = []
-    for start in range(0, Nvox, topo_chunk):
-        end = min(start + topo_chunk, Nvox)
-        c = coords[start:end]
-        inter = intersected[start:end]
-        chunk_n = c.shape[0]
-
-        # (chunk, 3, 4, 3)
-        neighbors = c.reshape(chunk_n, 1, 1, 3) + edge_neighbor_voxel_offset
-        mask = inter != 0
-        connected = neighbors[mask]  # (M, 4, 3)
-        dirs = inter[mask]           # (M,)
-        M = connected.shape[0]
-        if M == 0:
-            del neighbors, connected, dirs
-            continue
-
-        hash_key = torch.cat([
-            torch.zeros((M * 4, 1), dtype=torch.int, device=device),
-            connected.reshape(-1, 3),
-        ], dim=1)
-        indices = _C.hashmap_lookup_3d_cuda(
-            *hashmap_vox, hash_key, R, R, R,
-        ).reshape(M, 4).int()
-        valid = (indices != 0xffffffff).all(dim=1)
-        if valid.any():
-            all_quad_indices.append(indices[valid])
-            all_intersected_dirs.append(dirs[valid].int())
-
-        del neighbors, connected, dirs, hash_key, indices, valid
-
-    quad_indices = torch.cat(all_quad_indices)
-    intersected_dir = torch.cat(all_intersected_dirs)
-    del all_quad_indices, all_intersected_dirs, intersected
-    L = quad_indices.shape[0]
-
-    if verbose:
-        print(f"  {L:,} quads")
-
-    # --- 5. Remove unreferenced vertices ---
-    unique_verts = torch.unique(quad_indices.reshape(-1))
-    dual_verts = dual_verts[unique_verts]
-    vert_map = torch.zeros((Nvox,), dtype=torch.int32, device=device)
-    vert_map[unique_verts] = torch.arange(unique_verts.shape[0], dtype=torch.int32, device=device)
-    quad_indices = vert_map[quad_indices]
-    del vert_map, unique_verts
-
-    mesh_vertices = (dual_verts / resolution - 0.5) * scale + center
-
-    # --- 5b. Quad-level inner face removal ---
-    if remove_inner_faces:
-        if verbose:
-            print(f"Removing inner quads from {quad_indices.shape[0]:,} quads...")
-        inner_chunk = 524_288
-        quad_centers = torch.empty((quad_indices.shape[0], 3), dtype=torch.float32, device=device)
-        for i in range(0, quad_indices.shape[0], inner_chunk):
-            end = min(i + inner_chunk, quad_indices.shape[0])
-            q = quad_indices[i:end].long()
-            quad_centers[i:end] = (
-                mesh_vertices[q[:, 0]] + mesh_vertices[q[:, 1]] +
-                mesh_vertices[q[:, 2]] + mesh_vertices[q[:, 3]]
-            ) * 0.25
-
-        sdf = torch.empty(quad_centers.shape[0], dtype=torch.float32, device=device)
-        for i in range(0, quad_centers.shape[0], inner_chunk):
-            end = min(i + inner_chunk, quad_centers.shape[0])
-            sdf[i:end] = bvh.signed_distance(quad_centers[i:end], mode='raystab')[0]
-
-        is_outer = sdf >= -eps * 0.1
-        n_removed = (~is_outer).sum().item()
-        if verbose:
-            print(f"  SDF stats: min={sdf.min().item():.6f} max={sdf.max().item():.6f} eps={eps:.6f} threshold={-eps*0.1:.6f}")
-            print(f"  outer={is_outer.sum().item():,} inner={n_removed:,}")
-        quad_indices = quad_indices[is_outer]
-        intersected_dir = intersected_dir[is_outer]
-
-        # Re-index vertices to remove unused
-        used = torch.zeros(mesh_vertices.shape[0], dtype=torch.bool, device=device)
-        used[quad_indices.flatten()] = True
-        new_idx = torch.full((mesh_vertices.shape[0],), -1, dtype=torch.int32, device=device)
-        new_idx[used] = torch.arange(used.sum(), dtype=torch.int32, device=device)
-        mesh_vertices = mesh_vertices[used]
-        for i in range(0, quad_indices.shape[0], inner_chunk):
-            end = min(i + inner_chunk, quad_indices.shape[0])
-            quad_indices[i:end] = new_idx[quad_indices[i:end]]
-        L = quad_indices.shape[0]
-
-        if verbose:
-            print(f"  Removed {n_removed:,} inner quads, {L:,} remaining")
-            print(f"  mesh_vertices: {mesh_vertices.shape}, has_nan={torch.isnan(mesh_vertices).any().item()}")
-            print(f"  quad_indices: {quad_indices.shape}, min={quad_indices.min().item()}, max={quad_indices.max().item()}, has_neg={((quad_indices < 0).any()).item()}")
-        del quad_centers, sdf, is_outer, used, new_idx
-
-    # --- 6. Chunked Triangle Splitting ---
-    if verbose:
-        print(f"Triangle splitting (chunked, {tri_chunk:,} quads/chunk)...")
-
-    all_triangles = []
-    for start in range(0, L, tri_chunk):
-        end = min(start + tri_chunk, L)
-        qi = quad_indices[start:end]
-        idir = intersected_dir[start:end]
-        is_pos = (idir == 1).unsqueeze(1)
-
-        # Split 1
-        t0 = torch.where(is_pos, qi[:, quad_split_1_p], qi[:, quad_split_1_n])
-        n0a = torch.linalg.cross(
-            mesh_vertices[t0[:, 1]] - mesh_vertices[t0[:, 0]],
-            mesh_vertices[t0[:, 2]] - mesh_vertices[t0[:, 0]],
-        )
-        n0b = torch.linalg.cross(
-            mesh_vertices[t0[:, 2]] - mesh_vertices[t0[:, 1]],
-            mesh_vertices[t0[:, 3]] - mesh_vertices[t0[:, 1]],
-        )
-        align0 = (n0a * n0b).sum(dim=1).abs()
-
-        # Split 2
-        t1 = torch.where(is_pos, qi[:, quad_split_2_p], qi[:, quad_split_2_n])
-        n1a = torch.linalg.cross(
-            mesh_vertices[t1[:, 1]] - mesh_vertices[t1[:, 0]],
-            mesh_vertices[t1[:, 2]] - mesh_vertices[t1[:, 0]],
-        )
-        n1b = torch.linalg.cross(
-            mesh_vertices[t1[:, 2]] - mesh_vertices[t1[:, 1]],
-            mesh_vertices[t1[:, 3]] - mesh_vertices[t1[:, 1]],
-        )
-        align1 = (n1a * n1b).sum(dim=1).abs()
-
-        selected = torch.where((align0 > align1).unsqueeze(1), t0, t1)
-        all_triangles.append(selected)
-        del qi, idir, t0, t1, n0a, n0b, n1a, n1b, align0, align1, selected
-
-    mesh_triangles = torch.cat(all_triangles).reshape(-1, 3)
-    del all_triangles, quad_indices, intersected_dir
-
-    if verbose:
-        print(f"After triangle split: verts={mesh_vertices.shape[0]:,} faces={mesh_triangles.shape[0]:,}")
-        print(f"  tri min={mesh_triangles.min().item()} max={mesh_triangles.max().item()} n_verts={mesh_vertices.shape[0]}")
-        has_invalid = (mesh_triangles < 0).any().item() or (mesh_triangles >= mesh_vertices.shape[0]).any().item()
-        print(f"  has_invalid_indices={has_invalid}")
-        print(f"  has_nan_verts={torch.isnan(mesh_vertices).any().item()}")
-
-    # --- 7. Project back ---
-    if project_back > 0:
-        if verbose:
-            print("Projecting back to original mesh...")
-        _, face_id, uvw = bvh.unsigned_distance(mesh_vertices, return_uvw=True)
-        orig_tri_verts = vertices[faces[face_id.long()]]
-        projected_verts = (orig_tri_verts * uvw.unsqueeze(-1)).sum(dim=1)
-        mesh_vertices -= project_back * (mesh_vertices - projected_verts)
-
-    if verbose:
-        print(f"  {mesh_vertices.shape[0]:,} vertices, {mesh_triangles.shape[0]:,} faces")
-
-    return mesh_vertices, mesh_triangles.int()
-
-
 def _batched_unsigned_distance(bvh, positions, batch_size=500_000, return_uvw=False):
     """Batch unsigned_distance queries to avoid GPU kernel timeout on large meshes."""
     import torch
@@ -1100,8 +813,6 @@ Takes the voxelgrid_npz_path from "Shape to Textured Mesh" and:
                 io.Boolean.Input("remesh", default=True, optional=True),
                 io.Boolean.Input("pre_simplify", default=True, optional=True,
                     tooltip="Pre-simplify mesh before remesh to massively reduce VRAM. May lose very thin features."),
-                io.Boolean.Input("remove_inner_faces", default=False, optional=True,
-                    tooltip="Remove faces whose centers are inside the original mesh (removes internal geometry artifacts)."),
                 io.Boolean.Input("double_sided", default=False, optional=True,
                     tooltip="Mark material as double-sided in GLB (renders both front and back faces)."),
                 io.String.Input("filename_prefix", default="trellis2", optional=True),
@@ -1119,15 +830,14 @@ Takes the voxelgrid_npz_path from "Shape to Textured Mesh" and:
         texture_size=2048,
         remesh=True,
         pre_simplify=True,
-        remove_inner_faces=False,
         double_sided=False,
         filename_prefix="trellis2",
     ):
         import json
         import torch
         import cv2
-        import cumesh_vb as CuMesh
-        from flex_gemm_ap.ops.grid_sample import grid_sample_3d
+        import cumesh as CuMesh
+        from .trellis2.grid_sample import grid_sample_3d
         import trimesh as Trimesh
 
         torch.cuda.empty_cache()
@@ -1172,8 +882,8 @@ Takes the voxelgrid_npz_path from "Shape to Textured Mesh" and:
             dc_scale = (aabb[1] - aabb[0]).max().item()
             remesh_band = 1.0
 
-            logger.info(f"Running low-mem DC: resolution={dc_resolution}")
-            new_verts, new_faces = remesh_narrow_band_dc_lowmem(
+            logger.info(f"Running DC remesh: resolution={dc_resolution}")
+            new_verts, new_faces = CuMesh.remeshing.remesh_narrow_band_dc(
                 vertices.to(device), faces.to(device),
                 center=dc_center,
                 scale=(dc_resolution + 3 * remesh_band) / dc_resolution * dc_scale,
@@ -1181,7 +891,6 @@ Takes the voxelgrid_npz_path from "Shape to Textured Mesh" and:
                 band=remesh_band,
                 project_back=0.9,
                 verbose=True,
-                remove_inner_faces=remove_inner_faces,
             )
             vertices = new_verts.cpu()
             faces = new_faces.cpu()
@@ -1281,7 +990,7 @@ Takes the voxelgrid_npz_path from "Shape to Textured Mesh" and:
             shape=torch.Size([1, attr_volume.shape[1], *grid_size.tolist()]),
             grid=((valid_pos - aabb[0]) / voxel_size).reshape(1, -1, 3),
             mode='trilinear',
-        )
+        )[0]
 
         del valid_pos, bvh, orig_vertices, orig_faces, attr_volume, coords
         comfy.model_management.soft_empty_cache()
