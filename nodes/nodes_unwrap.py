@@ -34,7 +34,7 @@ class Trellis2Simplify(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2Simplify",
             display_name="TRELLIS.2 Simplify Mesh",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Simplify mesh to target face count.
 
 Uses CuMesh for GPU-accelerated simplification.
@@ -171,7 +171,7 @@ class Trellis2UVUnwrap(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2UVUnwrap",
             display_name="TRELLIS.2 UV Unwrap",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""UV unwrap mesh using xatlas.
 
 Just creates UVs - no texture baking. Use Rasterize PBR node after this.
@@ -273,7 +273,7 @@ class Trellis2ProcessMesh(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2ProcessMesh",
             display_name="TRELLIS.2 Process Mesh",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""All-in-one mesh processing pipeline.
 
 Combines fill holes -> remesh -> simplify -> cleanup -> UV unwrap in a single
@@ -506,7 +506,7 @@ class Trellis2RasterizePBR(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2RasterizePBR",
             display_name="TRELLIS.2 Rasterize PBR",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Bake PBR textures from voxel data onto UV-mapped mesh.
 
 Takes a mesh WITH UVs and bakes color/metallic/roughness from the VOXELGRID.
@@ -1084,7 +1084,7 @@ class Trellis2ExportGLB(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2ExportGLB",
             display_name="TRELLIS.2 Export GLB",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             is_output_node=True,
             description="""All-in-one textured GLB export from voxelgrid data.
 
@@ -1366,7 +1366,7 @@ class Trellis2ExportTrimesh(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2ExportTrimesh",
             display_name="TRELLIS.2 Export Trimesh",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             is_output_node=True,
             description="""Export trimesh to various 3D file formats.
 

@@ -33,7 +33,7 @@ class Trellis2LoadSSFlowModel(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2LoadSSFlowModel",
             display_name="TRELLIS.2 Load SS Flow Model (Native)",
-            category="TRELLIS2/Native",
+            category="eastmoe/Comfy-Easy-TRELLIS2/Native",
             description="""Load the sparse structure flow model as a standard ComfyUI MODEL.
 
 This wraps the flow model in ComfyUI's BaseModel/ModelPatcher system
@@ -130,7 +130,7 @@ class Trellis2SSConditioning(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2SSConditioning",
             display_name="TRELLIS.2 SS Conditioning (Native)",
-            category="TRELLIS2/Native",
+            category="eastmoe/Comfy-Easy-TRELLIS2/Native",
             description="""Convert TRELLIS2 DinoV3 conditioning to standard ComfyUI CONDITIONING.
 
 Takes the output of 'TRELLIS.2 Get Conditioning' and produces
@@ -169,7 +169,7 @@ class Trellis2Empty3DLatent(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2Empty3DLatent",
             display_name="TRELLIS.2 Empty 3D Latent",
-            category="TRELLIS2/Native",
+            category="eastmoe/Comfy-Easy-TRELLIS2/Native",
             description="""Create an empty 3D latent tensor for sparse structure sampling.
 
 Reads the model's resolution and channel count to create the
@@ -210,7 +210,7 @@ class Trellis2ApplyGuidanceInterval(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2ApplyGuidanceInterval",
             display_name="TRELLIS.2 Apply Guidance Interval",
-            category="TRELLIS2/Native",
+            category="eastmoe/Comfy-Easy-TRELLIS2/Native",
             description="""Apply a guidance interval to control when CFG is active during sampling.
 
 For TRELLIS2 flow matching, sigma goes from 1.0 (pure noise) to 0.0 (clean).
@@ -272,7 +272,7 @@ class Trellis2DecodeSSLatent(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2DecodeSSLatent",
             display_name="TRELLIS.2 Decode SS Latent",
-            category="TRELLIS2/Native",
+            category="eastmoe/Comfy-Easy-TRELLIS2/Native",
             description="""Decode sparse structure latent into voxel coordinates.
 
 Takes the sampled latent from KSampler and:

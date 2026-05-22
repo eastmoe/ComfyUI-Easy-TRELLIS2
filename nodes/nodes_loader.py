@@ -33,7 +33,7 @@ class LoadTrellis2Models(io.ComfyNode):
         return io.Schema(
             node_id="LoadTrellis2Models",
             display_name="Load TRELLIS.2 Models",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Load TRELLIS.2 model configuration for image-to-3D generation.
 
 This node creates a configuration object that inference nodes use

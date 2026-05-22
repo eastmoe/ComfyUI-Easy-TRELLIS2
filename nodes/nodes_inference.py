@@ -14,7 +14,7 @@ class Trellis2GetConditioning(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2GetConditioning",
             display_name="TRELLIS.2 Get Conditioning",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Preprocess image and extract visual features using DinoV3.
 
 This node handles:
@@ -71,7 +71,7 @@ class Trellis2ImageToShape(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2ImageToShape",
             display_name="TRELLIS.2 Image to Shape",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Generate 3D shape from image conditioning.
 
 Returns mesh, shape_slat (for texture generation), and subs (subdivision guides).""",
@@ -158,7 +158,7 @@ class Trellis2ShapeToTexturedMesh(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2ShapeToTexturedMesh",
             display_name="TRELLIS.2 Shape to Textured Mesh",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Generate PBR voxel texture from shape latent.
 
 Takes shape_slat and subs from "Image to Shape" and generates PBR materials
@@ -226,7 +226,7 @@ class Trellis2LoadMesh(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2LoadMesh",
             display_name="TRELLIS.2 Load Mesh",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Load a 3D mesh from file.
 
 Supports GLB, GLTF, OBJ, PLY, STL, 3MF, DAE, OFF and other formats
@@ -276,7 +276,7 @@ class Trellis2EncodeMesh(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2EncodeMesh",
             display_name="TRELLIS.2 Encode Mesh",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Encode a mesh into a TRELLIS.2 shape structured latent.
 
 Uses the FlexiDualGrid VAE Encoder to convert mesh geometry into TRELLIS.2's
@@ -334,7 +334,7 @@ class Trellis2TextureMesh(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2TextureMesh",
             display_name="TRELLIS.2 Texture Mesh (Standalone)",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Generate PBR textures for an existing mesh using a reference image.
 
 This is the "retexture" workflow: take any mesh, encode it with Encode Mesh,
@@ -411,7 +411,7 @@ class Trellis2RefineMesh(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2RefineMesh",
             display_name="TRELLIS.2 Refine Mesh",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Refine mesh geometry by re-sampling shape at higher resolution.
 
 Takes an encoded mesh shape latent and:
@@ -501,7 +501,7 @@ class Trellis2ShapeToMesh(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2ShapeToMesh",
             display_name="TRELLIS.2 Simplify Mesh",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Simplify mesh and/or fill holes.
 
 Parameters:
@@ -574,7 +574,7 @@ class Trellis2MultiViewImageToShape(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2MultiViewImageToShape",
             display_name="TRELLIS.2 Multi-View Image to Shape",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Generate 3D shape from multiple view images.
 
 At each sampling step, runs the model once per view and blends predictions

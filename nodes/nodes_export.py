@@ -23,7 +23,7 @@ class Trellis2RenderPreview(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2RenderPreview",
             display_name="TRELLIS.2 Render Preview",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             description="""Render preview images of the 3D mesh.
 
 Parameters:
@@ -130,7 +130,7 @@ class Trellis2RenderVideo(io.ComfyNode):
         return io.Schema(
             node_id="Trellis2RenderVideo",
             display_name="TRELLIS.2 Render Video",
-            category="TRELLIS2",
+            category="eastmoe/Comfy-Easy-TRELLIS2",
             is_output_node=True,
             description="""Render a rotating video of the 3D mesh.
 
